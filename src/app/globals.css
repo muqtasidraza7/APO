@@ -1,26 +1,201 @@
 @import "tailwindcss";
 
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Brand Colors - Modern Indigo Theme */
+  --color-primary: #ffffff;   /* Clean white background */
+  --color-accent: #4f46e5;    /* Indigo - vibrant and modern */
+  --color-accent-hover: #4338ca; /* Darker indigo on hover */
+  --color-accent-light: #eef2ff; /* Very light indigo/blue for backgrounds */
+  --color-surface: #f8fafc;   /* Soft light gray for sections */
+  --color-surface-hover: #f1f5f9; /* Slightly darker surface */
+  --color-text: #1e293b;      /* Dark slate for text readability */
+  --color-text-light: #64748b; /* Lighter gray for secondary text */
+  --color-text-lighter: #94a3b8; /* Even lighter for tertiary text */
+  --color-muted: #cbd5e1;     /* Muted light gray */
+  --color-border: #e2e8f0;    /* Clean border color */
+  --color-border-light: #f1f5f9; /* Lighter border */
+
+  /* Layout & Style */
+  --radius: 0.5rem;           /* More refined rounded corners */
+  --radius-lg: 0.75rem;
+  --transition: 200ms ease-in-out;
+
+  /* Shadows - Minimal & elegant (indigo-tinted) */
+  --shadow-xs: 0 1px 2px rgba(79, 70, 229, 0.04);
+  --shadow-soft: 0 1px 3px rgba(79, 70, 229, 0.06);
+  --shadow-md: 0 4px 12px rgba(79, 70, 229, 0.08);
+  --shadow-lg: 0 8px 24px rgba(79, 70, 229, 0.12);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* Clean white background with ultra-subtle accents */
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: linear-gradient(
+      180deg,
+      rgba(79, 70, 229, 0.02),
+      rgba(248, 250, 252, 0.5)
+    ),
+    var(--color-primary);
+  color: var(--color-text);
+  transition: background var(--transition), color var(--transition);
+  line-height: 1.6;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Selection styling */
+::selection {
+  background-color: var(--color-accent-light);
+  color: var(--color-accent);
+}
+
+/* Link styling */
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+@layer base {
+  h1, h2, h3, h4, h5, h6 {
+    font-weight: 700;
+    color: var(--color-text);
+    line-height: 1.3;
+  }
+
+  h1 {
+    font-size: 2.5rem;
+  }
+
+  h2 {
+    font-size: 2rem;
+  }
+
+  h3 {
+    font-size: 1.5rem;
+  }
+
+  p {
+    color: var(--color-text-light);
+    line-height: 1.7;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer utilities {
+  /* Button Base Styles */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.625rem 1rem;
+    border-radius: var(--radius);
+    font-weight: 600;
+    font-size: 0.875rem;
+    box-shadow: var(--shadow-xs);
+    transition: var(--transition);
+    cursor: pointer;
+    border: none;
+    white-space: nowrap;
+  }
+
+  /* Primary Button - Indigo CTA */
+  .btn-primary {
+    background: var(--color-accent);
+    color: white;
+  }
+  .btn-primary:hover {
+    background: var(--color-accent-hover);
+    box-shadow: var(--shadow-md);
+  }
+  .btn-primary:active {
+    transform: scale(0.98);
+  }
+
+  /* Outline Button - Subtle bordered style */
+  .btn-outline {
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+    background: white;
+  }
+  .btn-outline:hover {
+    background: var(--color-surface);
+    border-color: var(--color-border-light);
+    color: var(--color-accent);
+  }
+
+  /* Secondary Button - Light blue background */
+  .btn-secondary {
+    background: var(--color-accent-light);
+    color: var(--color-accent);
+  }
+  .btn-secondary:hover {
+    background: rgba(79, 70, 229, 0.08);
+  }
+
+  /* Navigation Links */
+  .nav-link {
+    font-weight: 500;
+    font-size: 0.875rem;
+    transition: color var(--transition);
+    color: var(--color-text-light);
+  }
+  .nav-link:hover {
+    color: var(--color-accent);
+  }
+
+  /* Section Styles */
+  .section-title {
+    font-size: 2.25rem;
+    font-weight: 800;
+    color: var(--color-text);
+  }
+
+  .section-subtitle {
+    font-size: 1.125rem;
+    color: var(--color-text-light);
+    line-height: 1.8;
+  }
+
+  /* Card Styles */
+  .card {
+    background: white;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    transition: var(--transition);
+    box-shadow: var(--shadow-xs);
+  }
+  .card:hover {
+    border-color: var(--color-accent-light);
+    box-shadow: var(--shadow-soft);
+    transform: translateY(-2px);
+  }
+
+  /* Container with max width */
+  .container {
+    max-width: 1280px;
+    margin: 0 auto;
+  }
+
+  /* Gradient Text */
+  .gradient-text {
+    background: linear-gradient(135deg, var(--color-accent), #7c3aed);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Badge Styles */
+  .badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: var(--color-accent-light);
+    color: var(--color-accent);
+  }
 }
