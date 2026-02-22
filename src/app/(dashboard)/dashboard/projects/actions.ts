@@ -6,22 +6,19 @@ import { redirect } from "next/navigation";
 export async function createProject(formData: FormData) {
   const supabase = await createClient();
 
-  // 1. Get User
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: "You must be logged in" };
 
-  // 2. Extract Data
   const file = formData.get("file") as File;
   const projectName = formData.get("projectName") as string;
   const workspaceId = formData.get("workspaceId") as string;
 
-  console.log("Starting Upload for:", projectName); // DEBUG
+  console.log("Starting Upload for:", projectName); 
 
   if (!file || !projectName || !workspaceId) {
     return { error: "Missing required fields" };
   }
 
-  // 3. Upload File
   const filePath = `${workspaceId}/${Date.now()}_${file.name}`;
   const { error: uploadError } = await supabase.storage
     .from("project-files")
@@ -32,12 +29,10 @@ export async function createProject(formData: FormData) {
     return { error: `Upload Failed: ${uploadError.message}` };
   }
 
-  // 4. Get Public URL
   const { data: { publicUrl } } = supabase.storage
     .from("project-files")
     .getPublicUrl(filePath);
 
-  // 5. Create Project Record
   const { data: project, error: dbError } = await supabase
     .from("projects")
     .insert({
@@ -51,7 +46,7 @@ export async function createProject(formData: FormData) {
     .single();
 
   if (dbError) {
-    console.error("Database Insert Error:", dbError); // This will show in your terminal now
+    console.error("Database Insert Error:", dbError); 
     return { error: `DB Save Failed: ${dbError.message}` };
   }
 
@@ -60,8 +55,7 @@ export async function createProject(formData: FormData) {
     return { error: "Project creation failed silently" };
   }
 
-  console.log("Project Created Successfully:", project.id); // DEBUG
+  console.log("Project Created Successfully:", project.id); 
 
-  // 6. Redirect ONLY if successful
   redirect(`/dashboard/projects/${project.id}`);
 }

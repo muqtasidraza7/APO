@@ -11,7 +11,7 @@ export default function SimulationButton({ projectId }: { projectId: string }) {
     setIsLoading(true);
     await simulateNextWeek(projectId);
     setIsLoading(false);
-    // No need to reload, revalidatePath handles the UI update
+    
   };
 
   return (

@@ -1,7 +1,4 @@
-/**
- * Project Template Definitions
- * Defines templates for different project types with specific fields and configurations
- */
+
 
 export type ProjectType = 'software' | 'construction' | 'marketing' | 'consulting' | 'research' | 'general';
 
@@ -187,48 +184,34 @@ export const PROJECT_TEMPLATES: Record<ProjectType, ProjectTemplate> = {
     }
 };
 
-/**
- * Get template by project type
- */
 export function getProjectTemplate(type: ProjectType | string): ProjectTemplate {
     const normalizedType = (type || 'general').toLowerCase() as ProjectType;
     return PROJECT_TEMPLATES[normalizedType] || PROJECT_TEMPLATES.general;
 }
 
-/**
- * Get all available templates
- */
 export function getAllTemplates(): ProjectTemplate[] {
     return Object.values(PROJECT_TEMPLATES);
 }
 
-/**
- * Detect project type from document content
- */
 export function detectProjectType(content: string): ProjectType {
     const lowerContent = content.toLowerCase();
 
-    // Software keywords
     if (lowerContent.match(/\b(software|app|api|website|frontend|backend|database|deployment)\b/gi)) {
         return 'software';
     }
 
-    // Construction keywords
     if (lowerContent.match(/\b(construction|building|renovation|contractor|site|permits|materials)\b/gi)) {
         return 'construction';
     }
 
-    // Marketing keywords
     if (lowerContent.match(/\b(marketing|campaign|branding|social media|seo|advertising|content)\b/gi)) {
         return 'marketing';
     }
 
-    // Consulting keywords
     if (lowerContent.match(/\b(consulting|advisory|strategy|engagement|stakeholder|business analysis)\b/gi)) {
         return 'consulting';
     }
 
-    // Research keywords
     if (lowerContent.match(/\b(research|study|methodology|data collection|analysis|publication)\b/gi)) {
         return 'research';
     }
@@ -236,17 +219,11 @@ export function detectProjectType(content: string): ProjectType {
     return 'general';
 }
 
-/**
- * Get suggested fields for a project type
- */
 export function getSuggestedFields(type: ProjectType): string[] {
     const template = getProjectTemplate(type);
     return template.defaultFields;
 }
 
-/**
- * Get suggested skills for a project type
- */
 export function getSuggestedSkills(type: ProjectType): string[] {
     const template = getProjectTemplate(type);
     return template.suggestedSkills;

@@ -27,7 +27,6 @@ export default function ProjectDetailsPage() {
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
 
-  // Milestone update handler
   const handleMilestoneUpdate = async (milestoneId: string, updates: any) => {
     try {
       const response = await fetch('/api/update-milestone', {
@@ -44,7 +43,6 @@ export default function ProjectDetailsPage() {
         throw new Error('Failed to update milestone');
       }
 
-      // Refresh project data to get updated milestones
       const { data } = await supabase
         .from("projects")
         .select("*")
@@ -58,7 +56,6 @@ export default function ProjectDetailsPage() {
     }
   };
 
-  // 1. Fetch & Subscribe to Updates
   useEffect(() => {
     const fetchProject = async () => {
       const { data, error } = await supabase
@@ -73,7 +70,6 @@ export default function ProjectDetailsPage() {
 
     fetchProject();
 
-    // Real-time Listener: Updates screen instantly when AI finishes
     const channel = supabase
       .channel("project-updates")
       .on(
@@ -96,7 +92,6 @@ export default function ProjectDetailsPage() {
     };
   }, [id, supabase]);
 
-  // 2. Trigger AI if status is 'parsing' (Auto-Retry)
   useEffect(() => {
     if (project?.ai_status === "parsing") {
       console.log("Triggering AI Analysis...");
@@ -106,8 +101,6 @@ export default function ProjectDetailsPage() {
       }).catch((err) => console.error("Trigger Error", err));
     }
   }, [project?.ai_status, id]);
-
-  // --- UI STATES ---
 
   if (loading)
     return (
@@ -119,11 +112,10 @@ export default function ProjectDetailsPage() {
       <div className="p-12 text-center text-red-500">Project not found</div>
     );
 
-  // STATE: PARSING (Loading Animation)
   if (project.ai_status === "parsing" || project.ai_status === "idle") {
     return (
       <div className="max-w-2xl mx-auto py-16 text-center">
-        {/* Animated Icon */}
+        
         <div className="relative w-24 h-24 mx-auto mb-8">
           <div className="absolute inset-0 border-4 border-slate-100 rounded-full"></div>
           <div className="absolute inset-0 border-4 border-[var(--color-accent)] border-t-transparent rounded-full animate-spin"></div>
@@ -155,7 +147,6 @@ export default function ProjectDetailsPage() {
           </div>
         </div>
 
-        {/* Manual Refresh Button (Just in case) */}
         <button
           onClick={() => window.location.reload()}
           className="mt-8 text-sm text-slate-400 hover:text-slate-600 flex items-center gap-2 mx-auto"
@@ -166,13 +157,12 @@ export default function ProjectDetailsPage() {
     );
   }
 
-  // STATE: COMPLETED (The Blueprint)
   if (project.ai_status === "completed") {
     const data = project.ai_data || {};
 
     return (
       <div className="max-w-6xl mx-auto space-y-8 pb-12">
-        {/* Header */}
+        
         <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-2 flex-wrap">
@@ -193,7 +183,6 @@ export default function ProjectDetailsPage() {
             </p>
           </div>
 
-          {/* Link to Allocation Page */}
           <Link
             href={`/dashboard/projects/${id}/allocation`}
             className="btn btn-primary shadow-lg shadow-indigo-100"
@@ -203,7 +192,6 @@ export default function ProjectDetailsPage() {
           </Link>
         </div>
 
-        {/* Metrics Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
             <div className="flex items-center gap-3 text-slate-500 mb-2">
@@ -243,9 +231,8 @@ export default function ProjectDetailsPage() {
           </div>
         </div>
 
-        {/* Details Grid */}
         <div className="grid md:grid-cols-3 gap-8">
-          {/* Milestones */}
+          
           <div className="md:col-span-2 space-y-6">
             <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
               <Target size={20} className="text-[var(--color-accent)]" />
@@ -258,7 +245,6 @@ export default function ProjectDetailsPage() {
             />
           </div>
 
-          {/* Skills & Risks */}
           <div className="space-y-6">
             <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
               <Users size={20} className="text-[var(--color-accent)]" />
@@ -283,7 +269,7 @@ export default function ProjectDetailsPage() {
               </h3>
               <ul className="space-y-3">
                 {data.risks?.map((risk: any, i: number) => {
-                  // Handle both object format (new) and string format (legacy)
+                  
                   const isObject = typeof risk === 'object' && risk !== null;
                   const description = isObject ? risk.description : risk;
                   const severity = isObject ? risk.severity : null;
@@ -325,7 +311,6 @@ export default function ProjectDetailsPage() {
           </div>
         </div>
 
-        {/* Dynamic Fields Section */}
         <DynamicFieldRenderer
           data={{
             client_info: project.client_info,
@@ -338,7 +323,6 @@ export default function ProjectDetailsPage() {
     );
   }
 
-  // STATE: ERROR
   return (
     <div className="max-w-md mx-auto py-16 text-center">
       <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center text-red-500 mx-auto mb-4">

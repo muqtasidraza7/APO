@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { createClient } from "../../utils/supabase/client"; // Use Client version
+import { createClient } from "../../utils/supabase/client"; 
 import { useRouter } from "next/navigation";
 import {
   LayoutDashboard,
@@ -14,10 +14,10 @@ import {
   Bell,
   Search,
   Menu,
-  Loader2, // Import Loader
+  Loader2, 
 } from "lucide-react";
 import { useState, useEffect } from "react";
-// Import the server action (Ensure this path matches where you created the action)
+
 import { signout } from "../../(auth)/action";
 
 export default function DashboardLayout({
@@ -28,7 +28,7 @@ export default function DashboardLayout({
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const pathname = usePathname();
-  const [isAuthenticated, setIsAuthenticated] = useState(false); // Track auth state
+  const [isAuthenticated, setIsAuthenticated] = useState(false); 
   const router = useRouter();
 
   useEffect(() => {
@@ -48,9 +48,8 @@ export default function DashboardLayout({
     checkAuth();
   }, [router]);
 
-  // Prevent "Flashed Content" - Don't show anything until we confirm auth
   if (!isAuthenticated) {
-    return null; // Or return a Loading Spinner <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin"/></div>
+    return null; 
   }
 
   const navItems = [
@@ -72,15 +71,14 @@ export default function DashboardLayout({
     },
   ];
 
-  // Handler for Sign Out
   const handleSignOut = async () => {
     setIsSigningOut(true);
-    await signout(); // Call the server action to clear session
+    await signout(); 
   };
 
   return (
     <div className="min-h-screen bg-slate-50 flex font-sans text-slate-900">
-      {/* 1. SIDEBAR (Desktop) */}
+      
       <aside className="hidden md:flex flex-col w-64 bg-white border-r border-slate-200 fixed h-full z-20">
         <div className="p-6 flex items-center gap-2 border-b border-slate-100">
           <div className="w-8 h-8 bg-[var(--color-accent)] rounded-lg flex items-center justify-center text-white">
@@ -93,7 +91,7 @@ export default function DashboardLayout({
 
         <nav className="flex-1 p-4 space-y-1">
           {navItems.map((item) => {
-            // Check if active (handles sub-routes too)
+            
             const isActive =
               pathname === item.href || pathname.startsWith(item.href + "/");
             return (
@@ -113,7 +111,6 @@ export default function DashboardLayout({
           })}
         </nav>
 
-        {/* SIGN OUT BUTTON (Updated) */}
         <div className="p-4 border-t border-slate-100">
           <button
             onClick={handleSignOut}
@@ -130,11 +127,10 @@ export default function DashboardLayout({
         </div>
       </aside>
 
-      {/* 2. MAIN CONTENT AREA */}
       <main className="flex-1 md:ml-64 flex flex-col min-h-screen">
-        {/* Top Header */}
+        
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 sticky top-0 z-10">
-          {/* Mobile Menu Trigger */}
+          
           <button
             className="md:hidden text-slate-500"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -142,7 +138,6 @@ export default function DashboardLayout({
             <Menu size={24} />
           </button>
 
-          {/* Search Bar */}
           <div className="hidden md:flex items-center bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 w-96">
             <Search size={16} className="text-slate-400" />
             <input
@@ -152,7 +147,6 @@ export default function DashboardLayout({
             />
           </div>
 
-          {/* Right Actions */}
           <div className="flex items-center gap-4">
             <button className="relative p-2 text-slate-500 hover:bg-slate-50 rounded-full transition-colors">
               <Bell size={20} />
@@ -164,7 +158,6 @@ export default function DashboardLayout({
           </div>
         </header>
 
-        {/* Page Content */}
         <div className="p-6 md:p-8 max-w-7xl mx-auto w-full">{children}</div>
       </main>
     </div>

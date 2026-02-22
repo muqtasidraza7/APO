@@ -5,7 +5,6 @@ import { motion } from "framer-motion";
 import { Mail, ArrowLeft, Send, Loader2 } from "lucide-react";
 import { useState } from "react";
 
-
 export default function ForgotPasswordPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<{
@@ -17,13 +16,8 @@ export default function ForgotPasswordPage() {
     setIsLoading(true);
     setMessage(null);
 
-    // Placeholder for actual logic:
-    // const result = await resetPassword(formData);
-
-    // Simulating API call for UI purposes
     await new Promise((resolve) => setTimeout(resolve, 1500));
 
-    // Logic to handle success/error would go here
     setMessage({
       text: "If an account exists, a reset link has been sent.",
       type: "success",

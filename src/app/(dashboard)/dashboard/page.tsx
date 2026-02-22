@@ -17,29 +17,23 @@ import {
 export default async function DashboardPage() {
   const supabase = await createClient();
 
-  // 1. Get User
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // 2. Get Workspace (Just for the name display)
   const { data: membership } = await supabase
     .from("workspace_members")
     .select("workspace:workspaces(id, name, created_at)")
     .eq("user_id", user.id)
     .single();
 
-  // Handle case where user might be new/no workspace yet
   if (!membership || !membership.workspace) {
     redirect("/onboarding");
   }
 
-  // @ts-ignore
   const workspaceName = membership.workspace.name;
 
-  // 3. FETCH PROJECTS (FIXED)
-  // Filtering by owner_id guarantees we see YOUR projects
   const { data: projects } = await supabase
     .from("projects")
     .select("*")
@@ -48,7 +42,6 @@ export default async function DashboardPage() {
 
   const hasProjects = projects && projects.length > 0;
 
-  // --- VIEW 1: EMPTY STATE (Onboarding Mode) ---
   if (!hasProjects) {
     return (
       <div className="max-w-5xl mx-auto space-y-8">
@@ -131,8 +124,6 @@ export default async function DashboardPage() {
     );
   }
 
-  // --- VIEW 2: ACTIVE DASHBOARD (Executive View) ---
-
   const activeProjects = projects.filter((p) => p.ai_status === "completed");
   const totalBudget = activeProjects.reduce(
     (sum, p) => sum + (p.ai_data?.budget_estimate || 0),
@@ -213,7 +204,7 @@ export default async function DashboardPage() {
       </div>
 
       <div className="grid md:grid-cols-3 gap-8">
-        {/* Left: Recent Activity Feed */}
+        
         <div className="md:col-span-2 space-y-6">
           <h3 className="font-bold text-slate-900 flex items-center gap-2">
             <Activity size={18} className="text-[var(--color-accent)]" />
@@ -271,7 +262,6 @@ export default async function DashboardPage() {
           </div>
         </div>
 
-        {/* Right: Quick Links */}
         <div className="space-y-6">
           <h3 className="font-bold text-slate-900">Quick Access</h3>
           <div className="grid gap-3">

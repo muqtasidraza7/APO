@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation"; // To read ?message=
+import { useSearchParams } from "next/navigation"; 
 import { motion } from "framer-motion";
 import { Mail, Lock, ArrowRight, Loader2 } from "lucide-react";
-import { login } from "../action"; // Make sure file is named actions.ts
+import { login } from "../action"; 
 import { useState, Suspense } from "react";
 import { OAuthButtons } from "../OAuthButtons";
 
@@ -24,7 +24,7 @@ function LoginForm() {
       setErrorMessage(result.error);
       setIsLoading(false);
     }
-    // On success, the server action redirects, so we keep loading true
+    
   };
 
   return (
@@ -40,17 +40,14 @@ function LoginForm() {
         </p>
       </div>
 
-      {/* Social Login Buttons */}
       <OAuthButtons />
 
-      {/* Flash Message (Success) */}
       {flashMessage && (
         <div className="mb-4 p-3 bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg flex items-center gap-2">
           <span>{flashMessage}</span>
         </div>
       )}
 
-      {/* Error Message (Failure) */}
       {errorMessage && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 text-xs rounded-lg">
           {errorMessage}

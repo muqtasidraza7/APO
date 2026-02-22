@@ -47,7 +47,7 @@ export default function RegisterPage() {
       )}
 
       <form action={handleSubmit} className="space-y-4">
-        {/* Full Name Field */}
+        
         <div className="space-y-1">
           <label className="text-xs font-medium text-slate-700 ml-1">
             Full Name
@@ -67,7 +67,6 @@ export default function RegisterPage() {
           </div>
         </div>
 
-        {/* Email Field */}
         <div className="space-y-1">
           <label className="text-xs font-medium text-slate-700 ml-1">
             Email Address
@@ -87,7 +86,6 @@ export default function RegisterPage() {
           </div>
         </div>
 
-        {/* Password Field */}
         <div className="space-y-1">
           <label className="text-xs font-medium text-slate-700 ml-1">
             Password

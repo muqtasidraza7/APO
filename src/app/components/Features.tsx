@@ -38,7 +38,7 @@ export default function Features() {
       className="py-24 bg-[var(--color-surface)] overflow-hidden"
     >
       <div className="container mx-auto px-6 max-w-7xl">
-        {/* Section Header */}
+        
         <div className="mb-16 md:text-center max-w-3xl mx-auto">
           <motion.h2
             initial={{ opacity: 0, y: 10 }}
@@ -59,14 +59,13 @@ export default function Features() {
           </motion.p>
         </div>
 
-        {/* Bento Grid Layout */}
         <motion.div
           variants={containerVariants}
           initial="hidden"
           animate={isInView ? "visible" : "hidden"}
           className="grid grid-cols-1 md:grid-cols-3 gap-6"
         >
-          {/* Card 1: Parsing (Large Feature - Spans 2 Columns) */}
+          
           <motion.div
             variants={itemVariants}
             className="md:col-span-2 group relative overflow-hidden rounded-3xl bg-white border border-[var(--color-border)] shadow-sm hover:shadow-md transition-all"

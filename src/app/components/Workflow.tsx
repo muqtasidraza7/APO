@@ -4,7 +4,6 @@ import { motion, useScroll, useTransform } from "framer-motion";
 import { useRef } from "react";
 import { Zap, Sparkles, Check, AlertCircle } from "lucide-react";
 
-// The Data
 const steps = [
   {
     title: "Upload & Parse",
@@ -47,11 +46,11 @@ export default function VerticalWorkflow() {
       className="py-24 bg-white overflow-hidden relative"
       ref={containerRef}
     >
-      {/* Background Grid */}
+      
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#f1f5f9_1px,transparent_1px),linear-gradient(to_bottom,#f1f5f9_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] pointer-events-none" />
 
       <div className="container mx-auto px-6 max-w-6xl relative z-10">
-        {/* Header */}
+        
         <div className="text-center mb-24">
           <h2 className="text-4xl md:text-5xl font-bold text-[var(--color-text)] tracking-tight mb-6">
             Intelligent <span className="gradient-text">Processing</span>
@@ -61,7 +60,6 @@ export default function VerticalWorkflow() {
           </p>
         </div>
 
-        {/* Vertical Timeline */}
         <div className="relative">
           <div className="absolute left-8 md:left-1/2 top-0 bottom-0 w-0.5 bg-slate-100 transform md:-translate-x-1/2" />
           <motion.div
@@ -93,7 +91,7 @@ function TimelineItem({ step, index }: { step: any; index: number }) {
         isEven ? "md:flex-row" : "md:flex-row-reverse"
       }`}
     >
-      {/* 1. TEXT SIDE */}
+      
       <div
         className={`flex-1 pl-20 md:pl-0 ${
           isEven ? "md:pr-24 md:text-right" : "md:pl-24 md:text-left"
@@ -114,12 +112,10 @@ function TimelineItem({ step, index }: { step: any; index: number }) {
         </div>
       </div>
 
-      {/* 2. CENTER NODE */}
       <div className="hidden md:flex absolute left-1/2 transform -translate-x-1/2 w-12 h-12 rounded-full bg-white border-4 border-slate-50 items-center justify-center z-10 shadow-sm">
         <div className={`w-3 h-3 rounded-full bg-${step.color}-500`} />
       </div>
 
-      {/* 3. VISUAL SIDE (Custom Simulation) */}
       <div
         className={`flex-1 pl-20 md:pl-0 ${isEven ? "md:pl-24" : "md:pr-24"}`}
       >
@@ -131,9 +127,8 @@ function TimelineItem({ step, index }: { step: any; index: number }) {
   );
 }
 
-// This handles the specific "Mini-App" animation for each step
 function VisualSimulation({ index, color }: { index: number; color: string }) {
-  // 1. SCANNING ANIMATION
+  
   if (index === 0)
     return (
       <div className="relative w-32 h-40 bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3">
@@ -143,13 +138,13 @@ function VisualSimulation({ index, color }: { index: number; color: string }) {
           <div className="w-full h-1 bg-slate-200 rounded" />
           <div className="w-2/3 h-1 bg-slate-200 rounded" />
         </div>
-        {/* The Scanning Laser */}
+        
         <motion.div
           animate={{ top: ["0%", "100%", "0%"] }}
           transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
           className="absolute left-0 right-0 h-0.5 bg-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.6)]"
         />
-        {/* Pop-up Data Tag */}
+        
         <motion.div
           animate={{ opacity: [0, 1, 0], y: [10, 0, -10] }}
           transition={{ duration: 2, repeat: Infinity, delay: 0.5 }}
@@ -160,11 +155,10 @@ function VisualSimulation({ index, color }: { index: number; color: string }) {
       </div>
     );
 
-  // 2. MATCHING ANIMATION
   if (index === 1)
     return (
       <div className="flex items-center gap-4">
-        {/* Candidate Card */}
+        
         <motion.div
           initial={{ x: -20, opacity: 0 }}
           whileInView={{ x: 0, opacity: 1 }}
@@ -178,7 +172,6 @@ function VisualSimulation({ index, color }: { index: number; color: string }) {
           <div className="h-1 w-8 bg-slate-100 rounded" />
         </motion.div>
 
-        {/* Connection Line */}
         <div className="flex flex-col items-center">
           <div className="w-12 h-1 bg-indigo-200 rounded-full mb-1" />
           <div className="bg-indigo-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
@@ -186,7 +179,6 @@ function VisualSimulation({ index, color }: { index: number; color: string }) {
           </div>
         </div>
 
-        {/* Job Card */}
         <motion.div
           initial={{ x: 20, opacity: 0 }}
           whileInView={{ x: 0, opacity: 1 }}
@@ -203,11 +195,10 @@ function VisualSimulation({ index, color }: { index: number; color: string }) {
       </div>
     );
 
-  // 3. SCHEDULING ANIMATION
   if (index === 2)
     return (
       <div className="w-full max-w-[200px] space-y-3">
-        {/* Calendar Header */}
+        
         <div className="flex justify-between border-b border-slate-100 pb-2">
           {[1, 2, 3, 4, 5].map((i) => (
             <div
@@ -218,7 +209,7 @@ function VisualSimulation({ index, color }: { index: number; color: string }) {
             </div>
           ))}
         </div>
-        {/* Task Bars */}
+        
         <div className="relative h-20">
           <motion.div
             initial={{ width: 0 }}
@@ -227,13 +218,13 @@ function VisualSimulation({ index, color }: { index: number; color: string }) {
             className="absolute top-0 left-0 h-6 bg-purple-200 rounded-md border-l-4 border-purple-500 w-[60%]"
           />
           <motion.div
-            initial={{ x: 0, width: "30%", backgroundColor: "#fee2e2" }} // Red initially
-            whileInView={{ x: "65%", width: "30%", backgroundColor: "#f3e8ff" }} // Moves to purple
+            initial={{ x: 0, width: "30%", backgroundColor: "#fee2e2" }} 
+            whileInView={{ x: "65%", width: "30%", backgroundColor: "#f3e8ff" }} 
             transition={{ duration: 1.5, delay: 0.5 }}
             className="absolute top-8 left-0 h-6 rounded-md border-l-4 border-red-400"
             style={{ borderColor: "var(--color-accent)" }}
           >
-            {/* Conflict Alert Icon */}
+            
             <motion.div
               initial={{ opacity: 1 }}
               whileInView={{ opacity: 0 }}
@@ -247,7 +238,6 @@ function VisualSimulation({ index, color }: { index: number; color: string }) {
       </div>
     );
 
-  // 4. ANALYTICS ANIMATION
   if (index === 3)
     return (
       <div className="flex items-end gap-2 h-24 items-end px-6 pb-4 w-full">

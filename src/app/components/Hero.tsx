@@ -29,10 +29,9 @@ export default function Hero() {
 
   return (
     <section className="relative min-h-screen flex items-center justify-center bg-white overflow-hidden pt-12">
-      {/* Subtle Background Gradient */}
+      
       <div className="absolute inset-0 bg-gradient-to-br from-blue-50/50 via-white to-slate-50/30 pointer-events-none"></div>
 
-      {/* Floating Accent Element */}
       <div className="absolute top-20 right-10 w-40 h-40 bg-blue-100/20 rounded-full blur-3xl"></div>
       <div className="absolute bottom-20 left-10 w-32 h-32 bg-blue-50/30 rounded-full blur-2xl"></div>
 
@@ -43,7 +42,7 @@ export default function Hero() {
           animate="visible"
           className="flex flex-col items-center gap-8 max-w-3xl"
         >
-          {/* Main Heading */}
+          
           <motion.h1
             variants={itemVariants}
             className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold leading-tight text-[var(--color-text)] md:whitespace-nowrap"
@@ -51,7 +50,6 @@ export default function Hero() {
             AI Project <span className="gradient-text">Officer</span>
           </motion.h1>
 
-          {/* Subtitle */}
           <motion.p
             variants={itemVariants}
             className="text-lg md:text-xl text-[var(--color-text-light)] max-w-4xl leading-relaxed"
@@ -60,7 +58,6 @@ export default function Hero() {
             smarter, execute faster, achieve more effortlessly.
           </motion.p>
 
-          {/* CTA Button */}
           <motion.div variants={itemVariants}>
             <Link
               href="/register"

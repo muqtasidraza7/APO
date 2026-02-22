@@ -23,7 +23,6 @@ export default function NewProjectPage() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Fetch Workspace ID on mount (Client Side)
   useEffect(() => {
     const fetchWorkspace = async () => {
       const supabase = createClient();
@@ -42,7 +41,6 @@ export default function NewProjectPage() {
     fetchWorkspace();
   }, []);
 
-  // Drag Handlers
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(true);
@@ -53,7 +51,7 @@ export default function NewProjectPage() {
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       setFile(e.dataTransfer.files[0]);
-      // Auto-fill project name from file name
+      
       if (!projectName) {
         setProjectName(e.dataTransfer.files[0].name.split(".")[0]);
       }
@@ -79,7 +77,7 @@ export default function NewProjectPage() {
 
   return (
     <div className="max-w-3xl mx-auto py-8">
-      {/* Header */}
+      
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
           <Sparkles className="text-[var(--color-accent)]" size={24} />
@@ -92,7 +90,7 @@ export default function NewProjectPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-8">
-        {/* 1. Project Name Input */}
+        
         <div className="space-y-2">
           <label className="text-sm font-semibold text-slate-700">
             Project Name
@@ -107,7 +105,6 @@ export default function NewProjectPage() {
           />
         </div>
 
-        {/* 2. Drag & Drop Area */}
         <div className="space-y-2">
           <label className="text-sm font-semibold text-slate-700">
             Upload Document
@@ -184,7 +181,6 @@ export default function NewProjectPage() {
           </div>
         </div>
 
-        {/* AI Disclaimer */}
         <div className="flex gap-3 bg-blue-50 text-blue-800 p-4 rounded-xl text-sm border border-blue-100">
           <Info size={18} className="shrink-0 mt-0.5" />
           <p>
@@ -194,7 +190,6 @@ export default function NewProjectPage() {
           </p>
         </div>
 
-        {/* Submit Button */}
         <div className="flex justify-end pt-4">
           <button
             disabled={!file || !projectName || isLoading}

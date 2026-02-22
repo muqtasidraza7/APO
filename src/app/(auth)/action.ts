@@ -20,7 +20,7 @@ export async function login(formData: FormData) {
   }
 
   revalidatePath('/', 'layout')
-  redirect('/onboarding') // Redirect to your main app area
+  redirect('/onboarding') 
 }
 
 export async function signup(formData: FormData) {
@@ -30,7 +30,7 @@ export async function signup(formData: FormData) {
   const password = formData.get('password') as string
   const fullName = formData.get('fullName') as string
 
-  console.log("Attempting signup for:", email); // DEBUG LOG
+  console.log("Attempting signup for:", email); 
 
   const { data, error } = await supabase.auth.signUp({
     email,
@@ -43,16 +43,15 @@ export async function signup(formData: FormData) {
   })
 
   if (error) {
-    console.error("Signup Error:", error.message); // DEBUG LOG
+    console.error("Signup Error:", error.message); 
     return { error: error.message }
   }
 
-  console.log("Signup Success User ID:", data.user?.id); // DEBUG LOG
-  // Revalidate and return success so the client can show a flash message
+  console.log("Signup Success User ID:", data.user?.id); 
+  
   revalidatePath('/', 'layout')
   return { success: true, message: 'Account created. Please check your email to verify your account.' }
 }
-
 
 export async function signout() {
   const supabase = await createClient();

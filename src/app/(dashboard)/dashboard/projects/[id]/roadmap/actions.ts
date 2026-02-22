@@ -6,7 +6,6 @@ import { revalidatePath } from "next/cache";
 export async function simulateNextWeek(projectId: string) {
   const supabase = await createClient();
 
-  // 1. Fetch current state
   const { data: project } = await supabase
     .from("projects")
     .select("current_week, simulation_logs, ai_data")
@@ -22,7 +21,6 @@ export async function simulateNextWeek(projectId: string) {
     return { message: "Project is already completed!" };
   }
 
-  // 2. Generate Random AI Event (The "Drama")
   const events = [
     { type: "success", msg: "Milestone achieved ahead of schedule." },
     { type: "info", msg: "Resources operating at optimal capacity." },
@@ -30,7 +28,7 @@ export async function simulateNextWeek(projectId: string) {
     { type: "success", msg: "Client approved the initial wireframes." },
     { type: "warning", msg: "Database migration taking longer than expected." },
   ];
-  // Pick a random event
+  
   const randomEvent = events[Math.floor(Math.random() * events.length)];
   
   const newLog = {
@@ -40,16 +38,13 @@ export async function simulateNextWeek(projectId: string) {
     message: randomEvent.msg
   };
 
-  // 3. Update Tasks (Auto-complete tasks for this week)
-  // In a real app, users would do this manually. Here, we auto-complete.
   await supabase
     .from("project_assignments")
     .update({ status: 'completed' })
     .eq("project_id", projectId)
-    .lte("week_number", newWeek); // Less than or equal to current week
+    .lte("week_number", newWeek); 
 
-  // 4. Update Project State
-  const updatedLogs = [newLog, ...(project.simulation_logs || [])].slice(0, 5); // Keep last 5 logs
+  const updatedLogs = [newLog, ...(project.simulation_logs || [])].slice(0, 5); 
 
   const { error } = await supabase
     .from("projects")

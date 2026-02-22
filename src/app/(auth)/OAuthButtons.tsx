@@ -1,6 +1,6 @@
 "use client";
 
-import { createClient } from "../utils/supabase/client"; // Use Client version!
+import { createClient } from "../utils/supabase/client"; 
 import { Github } from "lucide-react";
 
 export function OAuthButtons() {
@@ -10,7 +10,7 @@ export function OAuthButtons() {
     await supabase.auth.signInWithOAuth({
       provider,
       options: {
-        // Redirect to our callback route from Step 1
+        
         redirectTo: `${location.origin}/auth/callback`,
       },
     });
@@ -18,7 +18,7 @@ export function OAuthButtons() {
 
   return (
     <div className="flex flex-col gap-3 mb-6">
-      {/* GitHub Button */}
+      
       <button
         onClick={() => handleLogin("github")}
         className="w-full flex items-center justify-center gap-3 bg-[#24292F] text-white font-medium py-2.5 rounded-lg hover:bg-[#24292F]/90 transition-all shadow-sm"
@@ -27,12 +27,11 @@ export function OAuthButtons() {
         <span>Continue with GitHub</span>
       </button>
 
-      {/* Google Button */}
       <button
         onClick={() => handleLogin("google")}
         className="w-full flex items-center justify-center gap-3 bg-white border border-slate-200 text-slate-700 font-medium py-2.5 rounded-lg hover:bg-slate-50 transition-all shadow-sm"
       >
-        {/* Google Icon SVG */}
+        
         <svg className="w-5 h-5" viewBox="0 0 24 24">
           <path
             d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"

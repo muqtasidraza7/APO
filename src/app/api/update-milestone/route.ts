@@ -1,7 +1,4 @@
-/**
- * API Route: Update Milestone Status
- * Handles milestone status updates and completion tracking
- */
+
 
 import { createClient } from "../../utils/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
@@ -20,7 +17,6 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Verify user has access to this project
         const { data: project, error: projectError } = await supabase
             .from("projects")
             .select("id, owner_id")
@@ -34,7 +30,6 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Get current user
         const { data: { user } } = await supabase.auth.getUser();
 
         if (!user) {
@@ -44,10 +39,8 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Prepare update data
         const updateData: any = { ...updates };
 
-        // If marking as completed, set completed_at and completed_by
         if (updates.status === 'completed') {
             updateData.completed_at = new Date().toISOString();
             updateData.completed_by = user.id;
@@ -59,10 +52,6 @@ export async function POST(request: NextRequest) {
             updateData.completed_by = null;
             updateData.completion_percentage = 0;
         }
-
-        // Update milestone in database
-        // Note: For now, we'll update the ai_data.milestones array
-        // In production, you should use the project_milestones table
 
         const { data: currentProject } = await supabase
             .from("projects")

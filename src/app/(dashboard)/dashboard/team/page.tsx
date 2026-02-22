@@ -1,21 +1,14 @@
-/**
- * Team Dashboard Page
- * People-centric dashboard showing team capacity, workload, and task assignments
- */
 
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from "react";
 import { createClient } from "../../../utils/supabase/client";
-import {
-  Users,
-  UserPlus,
-  Filter,
-  Download,
-  RefreshCw,
-} from 'lucide-react';
+import { Users, UserPlus, Filter, RefreshCw, CheckCircle2 } from "lucide-react";
 import TeamMemberCard from "../../../components/TeamMemberCard";
 import CapacityGauge from "../../../components/CapacityGauge";
+import AddMemberModal from "../../../components/AddMemberModal";
+import AIAssignPanel from "../../../components/AIAssignPanel";
+import AssignTaskModal from "../../../components/AssignTaskModal";
 
 interface TeamMember {
   id: string;
@@ -24,209 +17,173 @@ interface TeamMember {
   email: string;
   job_title?: string;
   avatar_url?: string;
-  status: 'online' | 'away' | 'offline' | 'busy';
+  status: "online" | "away" | "offline" | "busy";
   skills: string[];
   capacity_hours_per_week: number;
-  workload?: any;
+  workload?: {
+    total_tasks: number;
+    active_tasks: number;
+    completed_tasks: number;
+    estimated_hours_remaining: number;
+    total_hours_logged: number;
+    utilization_percentage: number;
+  };
   active_tasks?: any[];
   completed_this_month?: number;
 }
 
 export default function TeamDashboardPage() {
+  const supabase = createClient();
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filterStatus, setFilterStatus] = useState<string>('all');
-  const supabase = createClient();
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [assigningMember, setAssigningMember] = useState<TeamMember | null>(null);
+  const [toast, setToast] = useState<{ title: string; project: string } | null>(null);
 
-  // Fetch team members
   useEffect(() => {
-    fetchTeamMembers();
-  }, []);
-
-  const fetchTeamMembers = async () => {
-    try {
-      setLoading(true);
-
-      // Get current user's workspace
+    const resolveWorkspace = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        console.error("No user found");
-        setTeamMembers([]);
-        return;
-      }
-
-      const { data: membership, error: membershipError } = await supabase
+      if (!user) return;
+      const { data } = await supabase
         .from("workspace_members")
         .select("workspace_id")
         .eq("user_id", user.id)
         .single();
+      if (data) setWorkspaceId(data.workspace_id);
+    };
+    resolveWorkspace();
+  }, []);
 
-      if (membershipError || !membership) {
-        console.error("No workspace membership found:", membershipError);
-        setTeamMembers([]);
-        return;
-      }
+  const fetchTeamMembers = useCallback(async () => {
+    if (!workspaceId) return;
+    try {
+      setLoading(true);
 
-      console.log("Fetching team members for workspace:", membership.workspace_id);
-
-      // Fetch team members (simplified - no view join)
       const { data: members, error } = await supabase
         .from("team_members")
         .select("*")
-        .eq("workspace_id", membership.workspace_id);
+        .eq("workspace_id", workspaceId);
 
       if (error) {
         console.error("Error fetching team members:", error);
-        console.error("Error details:", JSON.stringify(error, null, 2));
-        // If table doesn't exist, show empty state
-        if (error.message && error.message.includes('does not exist')) {
-          console.warn("Team members table not found. Please run database migrations.");
-        }
         setTeamMembers([]);
         return;
       }
 
-      console.log("Found team members:", members?.length || 0);
+      const { data: activities } = await supabase
+        .from("team_activity")
+        .select("id, team_member_id, metadata, description")
+        .eq("workspace_id", workspaceId)
+        .eq("activity_type", "task_assigned");
 
-      // If no members, just set empty array
-      if (!members || members.length === 0) {
-        console.log("No team members found in database");
-        setTeamMembers([]);
-        return;
+      const assignmentsByMember: Record<string, { title: string; hours: number }[]> = {};
+      for (const act of activities || []) {
+        if (act.metadata?.status === "removed") continue;
+        const memberId = act.team_member_id;
+        if (!memberId) continue;
+        if (!assignmentsByMember[memberId]) assignmentsByMember[memberId] = [];
+        assignmentsByMember[memberId].push({
+          title: act.metadata?.task_title || act.description || "Task",
+          hours: act.metadata?.estimated_hours || 0,
+        });
       }
 
-      // Map members with basic data
-      const membersWithDetails = members.map((member) => ({
-        ...member,
-        full_name: member.job_title || 'Team Member',
-        email: '',
-        workload: {
-          total_tasks: 0,
-          active_tasks: 0,
-          completed_tasks: 0,
-          estimated_hours_remaining: 0,
-          total_hours_logged: 0,
-          utilization_percentage: 0,
-        },
-        active_tasks: [],
-        completed_this_month: 0,
-      }));
+      const mapped: TeamMember[] = (members || []).map((m) => {
+        const tasks = assignmentsByMember[m.id] || [];
+        const totalHours = tasks.reduce((sum, t) => sum + t.hours, 0);
+        const capacity = m.capacity_hours_per_week || 40;
+        const utilization = capacity > 0 ? Math.round((totalHours / capacity) * 100) : 0;
 
-      console.log("Processed team members:", membersWithDetails);
-      setTeamMembers(membersWithDetails);
-    } catch (error) {
-      console.error("Unexpected error:", error);
+        return {
+          ...m,
+          full_name: m.job_title || "Team Member",
+          email: "",
+          workload: {
+            total_tasks: tasks.length,
+            active_tasks: tasks.length,
+            completed_tasks: 0,
+            estimated_hours_remaining: totalHours,
+            total_hours_logged: 0,
+            utilization_percentage: utilization,
+          },
+          active_tasks: tasks.map((t, i) => ({
+            id: String(i),
+            title: t.title,
+            status: "in_progress",
+          })),
+          completed_this_month: 0,
+        };
+      });
+
+      setTeamMembers(mapped);
+    } catch (err) {
+      console.error("Unexpected error:", err);
       setTeamMembers([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [workspaceId]);
 
-  // Calculate team-wide metrics
-  const calculateMetrics = () => {
+  useEffect(() => {
+    if (workspaceId) fetchTeamMembers();
+  }, [workspaceId, fetchTeamMembers]);
+
+  const metrics = (() => {
     const totalMembers = teamMembers.length;
-    const totalTasks = teamMembers.reduce((sum, m) => sum + (m.workload?.active_tasks || 0), 0);
-    const totalCapacity = teamMembers.reduce((sum, m) => sum + m.capacity_hours_per_week, 0);
-    const totalEstimated = teamMembers.reduce((sum, m) => sum + (m.workload?.estimated_hours_remaining || 0), 0);
-    const availableHours = totalCapacity - totalEstimated;
-    const utilizationPercentage = totalCapacity > 0 ? (totalEstimated / totalCapacity) * 100 : 0;
-
-    const overloadedCount = teamMembers.filter(m => (m.workload?.utilization_percentage || 0) >= 90).length;
-    const balancedCount = teamMembers.filter(m => {
-      const util = m.workload?.utilization_percentage || 0;
-      return util >= 50 && util < 90;
-    }).length;
-    const underutilizedCount = teamMembers.filter(m => (m.workload?.utilization_percentage || 0) < 50).length;
-
+    const totalTasks = teamMembers.reduce((s, m) => s + (m.workload?.active_tasks || 0), 0);
+    const totalCap = teamMembers.reduce((s, m) => s + m.capacity_hours_per_week, 0);
+    const totalUsed = teamMembers.reduce((s, m) => s + (m.workload?.estimated_hours_remaining || 0), 0);
+    const utilizationPercentage = totalCap > 0 ? (totalUsed / totalCap) * 100 : 0;
     return {
       totalMembers,
       totalTasks,
-      availableHours: Math.max(0, availableHours),
+      availableHours: Math.max(0, totalCap - totalUsed),
       utilizationPercentage,
-      overloadedCount,
-      balancedCount,
-      underutilizedCount,
+      overloadedCount: teamMembers.filter(m => (m.workload?.utilization_percentage || 0) >= 90).length,
+      balancedCount: teamMembers.filter(m => { const u = m.workload?.utilization_percentage || 0; return u >= 50 && u < 90; }).length,
+      underutilizedCount: teamMembers.filter(m => (m.workload?.utilization_percentage || 0) < 50).length,
     };
-  };
+  })();
 
-  const metrics = calculateMetrics();
-
-  // Filter members
-  const filteredMembers = teamMembers.filter(member => {
-    if (filterStatus === 'all') return true;
-    if (filterStatus === 'online') return member.status === 'online' || member.status === 'busy';
-    if (filterStatus === 'overloaded') return (member.workload?.utilization_percentage || 0) >= 90;
-    if (filterStatus === 'available') return (member.workload?.utilization_percentage || 0) < 50;
+  const filtered = teamMembers.filter(m => {
+    if (filterStatus === "all") return true;
+    if (filterStatus === "online") return m.status === "online" || m.status === "busy";
+    if (filterStatus === "overloaded") return (m.workload?.utilization_percentage || 0) >= 90;
+    if (filterStatus === "available") return (m.workload?.utilization_percentage || 0) < 50;
     return true;
   });
 
-  const handleAssignTask = (memberId: string) => {
-    // TODO: Open task assignment modal
-    console.log('Assign task to:', memberId);
+  const showToast = (title: string, project: string) => {
+    setToast({ title, project });
+    setTimeout(() => setToast(null), 4000);
   };
 
-  const handleMessage = (memberId: string) => {
-    // TODO: Open messaging interface
-    console.log('Message member:', memberId);
-  };
-
-  const handleViewDetails = (memberId: string) => {
-    // TODO: Navigate to member details page
-    console.log('View details for:', memberId);
-  };
-
-  if (loading) {
+  if (loading && !workspaceId) {
     return (
-      <div className="max-w-7xl mx-auto flex items-center justify-center min-h-[60vh]">
-        <div className="text-center">
-          <RefreshCw size={40} className="animate-spin text-indigo-600 mx-auto mb-4" />
-          <p className="text-slate-600">Loading team dashboard...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Empty state
-  if (teamMembers.length === 0) {
-    return (
-      <div className="max-w-5xl mx-auto">
-        <div className="text-center py-16">
-          <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-6">
-            <Users size={40} className="text-indigo-600" />
-          </div>
-          <h2 className="text-2xl font-bold text-slate-900 mb-3">No Team Members Yet</h2>
-          <p className="text-slate-600 mb-4 max-w-md mx-auto">
-            Start building your team by inviting members. They'll appear here with their workload and task assignments.
-          </p>
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 max-w-2xl mx-auto mb-8">
-            <p className="text-sm text-blue-800 font-medium mb-2">
-              📋 First time here? Run the database migrations first:
-            </p>
-            <ol className="text-sm text-blue-700 text-left space-y-1 max-w-xl mx-auto">
-              <li>1. Open Supabase Dashboard → SQL Editor</li>
-              <li>2. Run migrations: <code className="bg-blue-100 px-2 py-0.5 rounded">006_create_team_members.sql</code></li>
-              <li>3. Then run: <code className="bg-blue-100 px-2 py-0.5 rounded">007_create_task_assignments.sql</code></li>
-              <li>4. Finally run: <code className="bg-blue-100 px-2 py-0.5 rounded">008_create_team_activity_skills.sql</code></li>
-            </ol>
-            <p className="text-xs text-blue-600 mt-3">
-              See <code>database/migrations/TEAM_DASHBOARD_SETUP.md</code> for detailed instructions
-            </p>
-          </div>
-          <button className="btn btn-primary">
-            <UserPlus size={18} className="mr-2" />
-            Invite Team Member
-          </button>
-        </div>
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <RefreshCw size={36} className="animate-spin text-indigo-500" />
       </div>
     );
   }
 
   return (
     <div className="max-w-7xl mx-auto space-y-8">
-      {/* Header */}
+      
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 bg-white border border-green-200 shadow-xl rounded-2xl px-5 py-4 animate-in slide-in-from-bottom-4">
+          <CheckCircle2 size={20} className="text-green-500 flex-shrink-0" />
+          <div>
+            <p className="font-semibold text-slate-900 text-sm">Task Assigned!</p>
+            <p className="text-xs text-slate-500">"{toast.title}" → {toast.project}</p>
+          </div>
+        </div>
+      )}
+      
       <div className="flex items-end justify-between">
         <div>
-          <p className="text-sm font-medium text-slate-500 mb-1">People Management</p>
+          <p className="text-sm font-medium text-slate-400 mb-1">People Management</p>
           <h1 className="text-3xl font-bold text-slate-900">Team Dashboard</h1>
         </div>
         <div className="flex gap-3">
@@ -237,64 +194,119 @@ export default function TeamDashboardPage() {
             <RefreshCw size={16} />
             Refresh
           </button>
-          <button className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-2">
-            <Download size={16} />
-            Export
-          </button>
-          <button className="btn btn-primary">
-            <UserPlus size={18} className="mr-2" />
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="btn btn-primary flex items-center gap-2"
+          >
+            <UserPlus size={18} />
             Add Member
           </button>
         </div>
       </div>
 
-      {/* Capacity Overview */}
       <CapacityGauge {...metrics} />
 
-      {/* Filters */}
-      <div className="flex items-center gap-3">
-        <Filter size={18} className="text-slate-500" />
-        <div className="flex gap-2">
-          {[
-            { value: 'all', label: 'All Members' },
-            { value: 'online', label: 'Online' },
-            { value: 'overloaded', label: 'Overloaded' },
-            { value: 'available', label: 'Available' },
-          ].map((filter) => (
-            <button
-              key={filter.value}
-              onClick={() => setFilterStatus(filter.value)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filterStatus === filter.value
-                ? 'bg-indigo-600 text-white'
-                : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
-                }`}
-            >
-              {filter.label}
-            </button>
-          ))}
-        </div>
-        <span className="text-sm text-slate-500 ml-auto">
-          Showing {filteredMembers.length} of {teamMembers.length} members
-        </span>
-      </div>
+      {workspaceId && teamMembers.length > 0 && (
+        <AIAssignPanel
+          workspaceId={workspaceId}
+          teamMemberCount={teamMembers.length}
+        />
+      )}
 
-      {/* Team Member Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredMembers.map((member) => (
-          <TeamMemberCard
-            key={member.id}
-            member={member}
-            onAssignTask={handleAssignTask}
-            onMessage={handleMessage}
-            onViewDetails={handleViewDetails}
-          />
-        ))}
-      </div>
-
-      {filteredMembers.length === 0 && (
-        <div className="text-center py-12">
-          <p className="text-slate-500">No team members match the current filter.</p>
+      {teamMembers.length === 0 && !loading ? (
+        <div className="text-center py-16 bg-white border-2 border-dashed border-slate-200 rounded-2xl">
+          <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Users size={40} className="text-indigo-600" />
+          </div>
+          <h2 className="text-2xl font-bold text-slate-900 mb-3">No Team Members Yet</h2>
+          <p className="text-slate-500 mb-8 max-w-md mx-auto">
+            Add workspace members to your team. The AI will use their skills and availability to assign tasks automatically.
+          </p>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="btn btn-primary"
+          >
+            <UserPlus size={18} className="mr-2" />
+            Add First Member
+          </button>
         </div>
+      ) : (
+        <>
+          
+          <div className="flex items-center gap-3 flex-wrap">
+            <Filter size={16} className="text-slate-400" />
+            <div className="flex gap-2 flex-wrap">
+              {[
+                { value: "all", label: "All Members" },
+                { value: "online", label: "Online" },
+                { value: "overloaded", label: "Overloaded" },
+                { value: "available", label: "Available" },
+              ].map(f => (
+                <button
+                  key={f.value}
+                  onClick={() => setFilterStatus(f.value)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filterStatus === f.value
+                    ? "bg-indigo-600 text-white"
+                    : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
+                    }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            <span className="text-sm text-slate-400 ml-auto">
+              {filtered.length} / {teamMembers.length} members
+            </span>
+          </div>
+
+          {loading ? (
+            <div className="flex justify-center py-12">
+              <RefreshCw size={32} className="animate-spin text-indigo-400" />
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filtered.map((member) => (
+                <TeamMemberCard
+                  key={member.id}
+                  member={member}
+                  onAssignTask={() => setAssigningMember(member)}
+                  onMessage={() => { }}
+                  onViewDetails={() => { }}
+                />
+              ))}
+            </div>
+          )}
+
+          {filtered.length === 0 && !loading && (
+            <p className="text-center text-slate-400 py-8">
+              No members match this filter.
+            </p>
+          )}
+        </>
+      )}
+
+      {showAddModal && workspaceId && (
+        <AddMemberModal
+          workspaceId={workspaceId}
+          onClose={() => setShowAddModal(false)}
+          onSuccess={() => {
+            setShowAddModal(false);
+            fetchTeamMembers();
+          }}
+        />
+      )}
+
+      {assigningMember && workspaceId && (
+        <AssignTaskModal
+          member={assigningMember}
+          workspaceId={workspaceId}
+          onClose={() => { setAssigningMember(null); fetchTeamMembers(); }}
+          onSuccess={(taskTitle, projectName) => {
+            setAssigningMember(null);
+            showToast(taskTitle, projectName);
+            fetchTeamMembers(); 
+          }}
+        />
       )}
     </div>
   );

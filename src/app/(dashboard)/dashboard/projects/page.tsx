@@ -15,13 +15,11 @@ import { redirect } from "next/navigation";
 export default async function ProjectsListPage() {
   const supabase = await createClient();
 
-  // 1. Get Current User
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // 2. Fetch Projects (Ordered by newest)
   const { data: projects, error } = await supabase
     .from("projects")
     .select("*")
@@ -29,7 +27,7 @@ export default async function ProjectsListPage() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-8">
-      {/* Header */}
+      
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Projects</h1>
@@ -47,7 +45,6 @@ export default async function ProjectsListPage() {
         </Link>
       </div>
 
-      {/* Projects Grid */}
       {projects && projects.length > 0 ? (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
           {projects.map((project) => (
@@ -56,7 +53,7 @@ export default async function ProjectsListPage() {
               href={`/dashboard/projects/${project.id}`}
               className="group bg-white border border-slate-200 rounded-2xl p-6 hover:shadow-lg hover:-translate-y-1 transition-all duration-300 relative overflow-hidden"
             >
-              {/* Status Badge */}
+              
               <div className="absolute top-6 right-6">
                 {project.ai_status === "completed" ? (
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-green-50 text-green-700 border border-green-100">
@@ -69,23 +66,19 @@ export default async function ProjectsListPage() {
                 )}
               </div>
 
-              {/* Icon */}
               <div className="w-12 h-12 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600 mb-6 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
                 <Folder size={24} />
               </div>
 
-              {/* Content */}
               <h3 className="text-lg font-bold text-slate-900 mb-2 group-hover:text-indigo-600 transition-colors truncate">
                 {project.name}
               </h3>
 
-              {/* Summary (Truncated) */}
               <p className="text-sm text-slate-500 line-clamp-2 h-10 mb-6">
                 {project.ai_data?.summary ||
                   "AI is generating the project summary..."}
               </p>
 
-              {/* Footer Metrics */}
               <div className="pt-6 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
                 <div className="flex items-center gap-2">
                   <Calendar size={14} />
@@ -106,7 +99,7 @@ export default async function ProjectsListPage() {
           ))}
         </div>
       ) : (
-        /* Empty State */
+        
         <div className="text-center py-24 bg-white border border-slate-200 border-dashed rounded-2xl">
           <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-400">
             <Folder size={32} />

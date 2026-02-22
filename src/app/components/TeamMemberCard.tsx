@@ -1,7 +1,4 @@
-/**
- * TeamMemberCard Component
- * Displays individual team member with workload, tasks, and actions
- */
+
 
 "use client";
 
@@ -15,6 +12,7 @@ import {
     MessageSquare,
     UserPlus,
     TrendingUp,
+    Trash2,
 } from 'lucide-react';
 
 interface Task {
@@ -104,10 +102,10 @@ export default function TeamMemberCard({
 
     return (
         <div className="bg-white border border-slate-200 rounded-2xl p-6 hover:shadow-lg transition-all duration-200">
-            {/* Header */}
+            
             <div className="flex items-start justify-between mb-4">
                 <div className="flex items-start gap-3">
-                    {/* Avatar */}
+                    
                     <div className="relative">
                         {member.avatar_url ? (
                             <img
@@ -120,7 +118,7 @@ export default function TeamMemberCard({
                                 <User size={24} className="text-indigo-600" />
                             </div>
                         )}
-                        {/* Status Indicator */}
+                        
                         <div
                             className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-white ${getStatusColor(
                                 member.status
@@ -129,7 +127,6 @@ export default function TeamMemberCard({
                         />
                     </div>
 
-                    {/* Name & Title */}
                     <div>
                         <h3 className="font-bold text-slate-900 text-lg">{member.full_name}</h3>
                         {member.job_title && (
@@ -138,13 +135,11 @@ export default function TeamMemberCard({
                     </div>
                 </div>
 
-                {/* Utilization Badge */}
                 <span className={`px-3 py-1 rounded-full text-xs font-bold ${utilizationStatus.color}`}>
                     {utilizationStatus.label}
                 </span>
             </div>
 
-            {/* Workload Bar */}
             <div className="mb-4">
                 <div className="flex items-center justify-between text-sm mb-2">
                     <span className="text-slate-600 font-medium">Workload</span>
@@ -165,7 +160,6 @@ export default function TeamMemberCard({
                 </div>
             </div>
 
-            {/* Active Tasks */}
             {member.active_tasks && member.active_tasks.length > 0 && (
                 <div className="mb-4">
                     <h4 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-1">
@@ -208,7 +202,6 @@ export default function TeamMemberCard({
                 </div>
             )}
 
-            {/* Skills */}
             {member.skills && member.skills.length > 0 && (
                 <div className="mb-4">
                     <h4 className="text-sm font-semibold text-slate-700 mb-2">Skills</h4>
@@ -230,7 +223,6 @@ export default function TeamMemberCard({
                 </div>
             )}
 
-            {/* Stats */}
             <div className="grid grid-cols-3 gap-3 mb-4 pt-4 border-t border-slate-100">
                 <div className="text-center">
                     <div className="text-lg font-bold text-slate-900">{workload.active_tasks}</div>
@@ -248,15 +240,24 @@ export default function TeamMemberCard({
                 </div>
             </div>
 
-            {/* Actions */}
             <div className="flex gap-2">
-                <button
-                    onClick={() => onAssignTask?.(member.id)}
-                    className="flex-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1"
-                >
-                    <UserPlus size={16} />
-                    Assign Task
-                </button>
+                {workload.utilization_percentage >= 100 ? (
+                    <button
+                        onClick={() => onAssignTask?.(member.id)}
+                        className="flex-1 px-3 py-2 bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1"
+                    >
+                        <Trash2 size={15} />
+                        At Capacity — Manage Tasks
+                    </button>
+                ) : (
+                    <button
+                        onClick={() => onAssignTask?.(member.id)}
+                        className="flex-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1"
+                    >
+                        <UserPlus size={16} />
+                        Assign Task
+                    </button>
+                )}
                 <button
                     onClick={() => onMessage?.(member.id)}
                     className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition-colors"

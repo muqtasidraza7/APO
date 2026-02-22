@@ -13,20 +13,7 @@ import {
 import { runSmartAllocation } from "./actions";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import AllocationButton from "./AllocationButton"; // Assuming you made this component earlier
-
-// ... (keep Assignment type definition) ...
-type Assignment = {
-  id: string;
-  task_name: string;
-  week_number: number;
-  match_reason: string;
-  resource: {
-    full_name: string;
-    job_title: string;
-    skills: string[];
-  } | null;
-};
+import AllocationButton from "./AllocationButton"; 
 
 export default async function AllocationPage({
   params,
@@ -36,7 +23,6 @@ export default async function AllocationPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  // 1. Fetch Project
   const { data: project } = await supabase
     .from("projects")
     .select("name, workspace_id")
@@ -45,24 +31,35 @@ export default async function AllocationPage({
 
   if (!project) redirect("/dashboard");
 
-  // 2. Fetch Assignments
   const { data: rawAssignments } = await supabase
     .from("project_assignments")
     .select(
       `
       id, task_name, week_number, match_reason,
-      resource:team_resources(full_name, job_title, skills)
+      resource:team_members(job_title, skills, capacity_hours_per_week)
     `
     )
     .eq("project_id", id)
     .order("week_number", { ascending: true });
+
+  type Assignment = {
+    id: string;
+    task_name: string;
+    week_number: number;
+    match_reason: string;
+    resource: {
+      job_title: string;
+      skills: string[];
+      capacity_hours_per_week: number;
+    } | null;
+  };
 
   const assignments = rawAssignments as unknown as Assignment[];
   const hasAssignments = assignments && assignments.length > 0;
 
   return (
     <div className="max-w-6xl mx-auto space-y-8 pb-12">
-      {/* 1. Header Navigation */}
+      
       <div>
         <Link
           href={`/dashboard/projects/${id}`}
@@ -85,9 +82,8 @@ export default async function AllocationPage({
             </p>
           </div>
 
-          {/* Action Buttons */}
           <div className="flex items-center gap-3">
-            {/* --- NEW BUTTON: View Roadmap (Visible only if assigned) --- */}
+            
             {hasAssignments && (
               <Link
                 href={`/dashboard/projects/${id}/roadmap`}
@@ -109,10 +105,9 @@ export default async function AllocationPage({
 
       <hr className="border-slate-100" />
 
-      {/* 2. MAIN CONTENT AREA */}
       {hasAssignments ? (
         <div className="space-y-4">
-          {/* Header Row */}
+          
           <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">
             <div className="col-span-1">Timeline</div>
             <div className="col-span-4">Milestone Task</div>
@@ -120,13 +115,12 @@ export default async function AllocationPage({
             <div className="col-span-3">AI Reasoning</div>
           </div>
 
-          {/* Assignment Cards */}
           {assignments.map((item) => (
             <div
               key={item.id}
               className="bg-white border border-slate-200 rounded-xl p-6 md:p-4 grid grid-cols-1 md:grid-cols-12 gap-4 items-center shadow-sm hover:shadow-md transition-all"
             >
-              {/* Timeline */}
+              
               <div className="md:col-span-1 flex items-center gap-2">
                 <div className="w-10 h-10 bg-slate-50 rounded-lg flex flex-col items-center justify-center border border-slate-100 text-slate-600">
                   <span className="text-[10px] uppercase font-bold">Week</span>
@@ -134,27 +128,25 @@ export default async function AllocationPage({
                 </div>
               </div>
 
-              {/* Task */}
               <div className="md:col-span-4">
                 <h3 className="font-bold text-slate-900 text-base">
                   {item.task_name}
                 </h3>
               </div>
 
-              {/* Resource */}
               <div className="md:col-span-4">
                 {item.resource ? (
                   <div className="flex items-center gap-3 bg-indigo-50/50 p-2 rounded-lg border border-transparent">
                     <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center text-indigo-700 font-bold border border-indigo-100 text-xs shadow-sm">
-                      {item.resource.full_name.charAt(0)}
+                      {(item.resource.job_title || "?").charAt(0)}
                     </div>
                     <div>
                       <p className="font-semibold text-slate-900 text-sm">
-                        {item.resource.full_name}
+                        {item.resource.job_title || "Team Member"}
                       </p>
                       <div className="flex items-center gap-1.5 text-xs text-slate-500">
                         <Briefcase size={10} />
-                        {item.resource.job_title}
+                        {item.resource.capacity_hours_per_week}h/wk capacity
                       </div>
                     </div>
                     <CheckCircle2
@@ -170,7 +162,6 @@ export default async function AllocationPage({
                 )}
               </div>
 
-              {/* AI Reasoning */}
               <div className="md:col-span-3">
                 <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 text-xs text-slate-500 italic leading-relaxed">
                   <Sparkles
@@ -184,7 +175,7 @@ export default async function AllocationPage({
           ))}
         </div>
       ) : (
-        /* --- EMPTY STATE --- */
+        
         <div className="bg-white border border-slate-200 border-dashed rounded-2xl p-16 flex flex-col items-center justify-center text-center">
           <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center text-indigo-600 mb-6 shadow-sm">
             <Users size={40} />

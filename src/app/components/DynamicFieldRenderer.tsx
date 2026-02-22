@@ -1,7 +1,4 @@
-/**
- * DynamicFieldRenderer Component
- * Renders project data dynamically based on extracted fields from documents
- */
+
 
 import React from 'react';
 import {
@@ -28,7 +25,7 @@ export default function DynamicFieldRenderer({ data, projectType }: DynamicField
 
     return (
         <div className="space-y-6">
-            {/* Client Information */}
+            
             {data.client_info && Object.keys(data.client_info).length > 0 && (
                 <div className="bg-white border border-slate-200 rounded-2xl p-6">
                     <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
@@ -87,7 +84,6 @@ export default function DynamicFieldRenderer({ data, projectType }: DynamicField
                 </div>
             )}
 
-            {/* Success Criteria */}
             {data.success_criteria && Object.keys(data.success_criteria).length > 0 && (
                 <div className="bg-green-50 border border-green-100 rounded-2xl p-6">
                     <h3 className="text-lg font-bold text-green-900 mb-4 flex items-center gap-2">
@@ -144,7 +140,6 @@ export default function DynamicFieldRenderer({ data, projectType }: DynamicField
                 </div>
             )}
 
-            {/* Constraints */}
             {data.custom_fields?.constraints && Object.keys(data.custom_fields.constraints).length > 0 && (
                 <div className="bg-orange-50 border border-orange-100 rounded-2xl p-6">
                     <h3 className="text-lg font-bold text-orange-900 mb-4 flex items-center gap-2">
@@ -196,7 +191,6 @@ export default function DynamicFieldRenderer({ data, projectType }: DynamicField
                 </div>
             )}
 
-            {/* Assumptions */}
             {data.custom_fields?.assumptions && data.custom_fields.assumptions.length > 0 && (
                 <div className="bg-blue-50 border border-blue-100 rounded-2xl p-6">
                     <h3 className="text-lg font-bold text-blue-900 mb-4 flex items-center gap-2">
@@ -214,7 +208,6 @@ export default function DynamicFieldRenderer({ data, projectType }: DynamicField
                 </div>
             )}
 
-            {/* Requirements */}
             {data.custom_fields?.requirements && data.custom_fields.requirements.length > 0 && (
                 <div className="bg-white border border-slate-200 rounded-2xl p-6">
                     <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
@@ -234,7 +227,6 @@ export default function DynamicFieldRenderer({ data, projectType }: DynamicField
                 </div>
             )}
 
-            {/* Any other custom fields */}
             {data.custom_fields && Object.keys(data.custom_fields).some(
                 key => !['constraints', 'assumptions', 'requirements'].includes(key) && data.custom_fields[key]
             ) && (

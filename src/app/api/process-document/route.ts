@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { createClient } from "../../utils/supabase/server";
 import Groq from "groq-sdk";
 
-// Use pdf2json (The stable choice for Node.js)
 const PDFParser = require("pdf2json");
 
 export const runtime = "nodejs";
@@ -14,7 +13,6 @@ export async function POST(request: Request) {
 
     const supabase = await createClient();
 
-    // 1. Fetch Project Info
     const { data: project } = await supabase
       .from("projects")
       .select("*")
@@ -25,26 +23,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Project file URL missing" }, { status: 404 });
     }
 
-    // 2. Download File
     const fileResponse = await fetch(project.original_file_url);
     if (!fileResponse.ok) throw new Error("Failed to download file");
 
     const arrayBuffer = await fileResponse.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // 3. Extract Text
     console.log("2. Extracting Text from PDF...");
     const extractedText = await parsePdfBuffer(buffer);
     console.log("3. Extracted Characters:", extractedText.length);
 
-    // 4. Send to Llama 3 via Groq
     if (!process.env.GROQ_API_KEY) {
       throw new Error("Missing GROQ_API_KEY in .env.local");
     }
 
     const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-    // Enhanced Llama 3 Prompt for Comprehensive Extraction
     const prompt = `
       You are an expert Project Manager AI analyzing project documents.
       Extract ALL relevant information and return a JSON object with this EXACT structure.
@@ -137,9 +131,9 @@ export async function POST(request: Request) {
 
     const chatCompletion = await groq.chat.completions.create({
       "messages": [{ "role": "user", "content": prompt }],
-      "model": "llama-3.3-70b-versatile", // The smart, large model
-      "temperature": 0.1, // Keep it factual
-      "response_format": { type: "json_object" } // Force JSON mode (Crucial!)
+      "model": "llama-3.3-70b-versatile", 
+      "temperature": 0.1, 
+      "response_format": { type: "json_object" } 
     });
 
     const aiResponseContent = chatCompletion.choices[0]?.message?.content || "{}";
@@ -147,7 +141,6 @@ export async function POST(request: Request) {
 
     console.log("5. Llama Responded Success");
 
-    // 5. Separate data for different database columns
     const {
       client_info,
       success_criteria,
@@ -159,7 +152,6 @@ export async function POST(request: Request) {
       ...coreAiData
     } = aiData;
 
-    // Prepare custom_fields with additional extracted data
     const customFieldsData = {
       ...custom_fields,
       constraints,
@@ -167,11 +159,10 @@ export async function POST(request: Request) {
       requirements: aiData.requirements || []
     };
 
-    // 6. Update Database with all extracted data
     const { error: updateError } = await supabase
       .from("projects")
       .update({
-        ai_data: coreAiData, // Core fields (summary, budget, timeline, milestones, risks, skills)
+        ai_data: coreAiData, 
         ai_status: 'completed',
         project_type: project_type || 'general',
         client_info: client_info || {},
@@ -182,7 +173,6 @@ export async function POST(request: Request) {
 
     if (updateError) throw updateError;
 
-    // 7. Save extracted tasks to project_tasks table
     if (tasks && tasks.length > 0) {
       const tasksToInsert = tasks.map((task: any) => ({
         project_id: projectId,
@@ -203,7 +193,7 @@ export async function POST(request: Request) {
 
       if (tasksError) {
         console.error("Error saving tasks:", tasksError);
-        // Don't fail the whole operation if tasks fail
+        
       }
     }
 
@@ -215,8 +205,6 @@ export async function POST(request: Request) {
   }
 }
 
-
-
 function parsePdfBuffer(buffer: Buffer): Promise<string> {
   return new Promise((resolve, reject) => {
     const pdfParser = new PDFParser(null, 1);
@@ -227,10 +215,10 @@ function parsePdfBuffer(buffer: Buffer): Promise<string> {
       const rawText = pdfParser.getRawTextContent();
 
       try {
-        // Try to decode nicely
+        
         resolve(decodeURIComponent(rawText));
       } catch (e) {
-        // If decoding crashes (e.g. because of a "%" symbol), use the raw text
+        
         console.warn("PDF decoding warning (using raw text):", e);
         resolve(rawText);
       }

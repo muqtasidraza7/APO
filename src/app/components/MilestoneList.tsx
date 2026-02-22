@@ -1,7 +1,4 @@
-/**
- * Interactive Milestone Component
- * Displays milestones with status tracking and completion functionality
- */
+
 
 "use client";
 
@@ -96,18 +93,16 @@ export default function MilestoneList({
                 newStatus === 'in_progress' ? 50 : 0,
         };
 
-        // Optimistic update
         setLocalMilestones(prev =>
             prev.map(m => m.id === milestoneId ? { ...m, ...updates } : m)
         );
 
-        // Call API if handler provided
         if (onMilestoneUpdate) {
             try {
                 await onMilestoneUpdate(milestoneId, updates);
             } catch (error) {
                 console.error('Failed to update milestone:', error);
-                // Revert on error
+                
                 setLocalMilestones(prev =>
                     prev.map(m => m.id === milestoneId ? milestone : m)
                 );
@@ -123,7 +118,6 @@ export default function MilestoneList({
         handleStatusChange(milestoneId, newStatus);
     };
 
-    // Calculate overall progress
     const totalMilestones = localMilestones.length;
     const completedCount = localMilestones.filter(m => m.status === 'completed').length;
     const inProgressCount = localMilestones.filter(m => m.status === 'in_progress').length;
@@ -133,7 +127,7 @@ export default function MilestoneList({
 
     return (
         <div className="space-y-6">
-            {/* Progress Overview */}
+            
             <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-2xl p-6">
                 <div className="flex items-center justify-between mb-4">
                     <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
@@ -143,7 +137,6 @@ export default function MilestoneList({
                     <span className="text-2xl font-bold text-indigo-700">{overallProgress}%</span>
                 </div>
 
-                {/* Progress Bar */}
                 <div className="w-full bg-white rounded-full h-3 mb-4 overflow-hidden border border-indigo-200">
                     <div
                         className="bg-gradient-to-r from-indigo-500 to-purple-500 h-full transition-all duration-500 ease-out"
@@ -151,7 +144,6 @@ export default function MilestoneList({
                     />
                 </div>
 
-                {/* Stats */}
                 <div className="grid grid-cols-4 gap-3 text-center">
                     <div className="bg-white/50 rounded-lg p-2 border border-indigo-100">
                         <div className="text-2xl font-bold text-slate-900">{totalMilestones}</div>
@@ -172,7 +164,6 @@ export default function MilestoneList({
                 </div>
             </div>
 
-            {/* Milestone List */}
             <div className="space-y-4">
                 {localMilestones.map((milestone, index) => (
                     <div
@@ -180,7 +171,7 @@ export default function MilestoneList({
                         className={`border rounded-2xl p-5 transition-all duration-200 ${getStatusColor(milestone.status || 'pending')}`}
                     >
                         <div className="flex items-start gap-4">
-                            {/* Checkbox */}
+                            
                             {editable && (
                                 <button
                                     onClick={() => toggleComplete(milestone.id!)}
@@ -195,7 +186,6 @@ export default function MilestoneList({
                                 </button>
                             )}
 
-                            {/* Week Badge */}
                             <div className="flex-shrink-0 w-14 h-14 bg-white rounded-xl flex items-center justify-center border-2 border-indigo-200 shadow-sm">
                                 <div className="text-center">
                                     <div className="text-xs text-slate-500 font-medium">Week</div>
@@ -205,7 +195,6 @@ export default function MilestoneList({
                                 </div>
                             </div>
 
-                            {/* Content */}
                             <div className="flex-1 min-w-0">
                                 <div className="flex items-start justify-between gap-3 mb-2">
                                     <h3 className={`font-bold text-lg ${milestone.status === 'completed'
@@ -215,7 +204,6 @@ export default function MilestoneList({
                                         {milestone.title}
                                     </h3>
 
-                                    {/* Status Badge */}
                                     <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide border ${getStatusBadge(milestone.status || 'pending')} flex-shrink-0`}>
                                         {milestone.status || 'pending'}
                                     </span>
@@ -223,7 +211,6 @@ export default function MilestoneList({
 
                                 <p className="text-slate-600 text-sm mb-3">{milestone.deliverable}</p>
 
-                                {/* Success Criteria */}
                                 {milestone.success_criteria && (
                                     <div className="bg-white/70 rounded-lg p-3 border border-green-200 mb-3">
                                         <p className="text-sm text-green-800 flex items-start gap-2">
@@ -236,7 +223,6 @@ export default function MilestoneList({
                                     </div>
                                 )}
 
-                                {/* Actions */}
                                 {editable && milestone.status !== 'completed' && (
                                     <div className="flex gap-2 mt-3">
                                         {milestone.status !== 'in_progress' && (
@@ -274,7 +260,6 @@ export default function MilestoneList({
                                     </div>
                                 )}
 
-                                {/* Completion Message */}
                                 {milestone.status === 'completed' && (
                                     <div className="mt-3 text-sm text-green-700 font-medium flex items-center gap-2">
                                         <CheckCircle2 size={16} />

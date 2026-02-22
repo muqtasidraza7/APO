@@ -55,7 +55,7 @@ export default function PricingPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans">
-      {/* Header Section */}
+      
       <div className="bg-white border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-6 py-24 text-center">
           <motion.div
@@ -78,7 +78,6 @@ export default function PricingPage() {
         </div>
       </div>
 
-      {/* Pricing Cards */}
       <div className="max-w-7xl mx-auto px-6 py-20">
         <div className="grid md:grid-cols-3 gap-8">
           {tiers.map((tier, index) => (

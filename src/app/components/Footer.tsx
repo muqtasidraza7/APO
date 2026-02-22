@@ -39,7 +39,7 @@ export default function Footer() {
     <footer className="relative bg-white border-t border-[var(--color-border)] text-[var(--color-text-light)] pt-16 pb-8">
       <div className="container mx-auto px-6 max-w-6xl">
         <div className="grid lg:grid-cols-4 gap-12 mb-16">
-          {/* 1. Brand Section */}
+          
           <div className="lg:col-span-2 space-y-6">
             <Link href="/" className="inline-flex items-center gap-1 group">
               <span className="text-2xl font-bold text-[var(--color-text)] tracking-tight">
@@ -52,7 +52,6 @@ export default function Footer() {
               documents, optimize resources, and execute smarter.
             </p>
 
-            {/* Newsletter Input */}
             <div className="flex gap-2 max-w-xs pt-2">
               <input
                 type="email"
@@ -65,7 +64,6 @@ export default function Footer() {
             </div>
           </div>
 
-          {/* 2. Navigation Columns */}
           <div>
             <h3 className="font-semibold text-[var(--color-text)] mb-4">
               Product
@@ -103,7 +101,6 @@ export default function Footer() {
           </div>
         </div>
 
-        {/* 3. Bottom Bar */}
         <div className="pt-8 border-t border-[var(--color-border)] flex flex-col md:flex-row items-center justify-between gap-4">
           <p className="text-xs text-[var(--color-text-lighter)]">
             © {new Date().getFullYear()} APO. All rights reserved.

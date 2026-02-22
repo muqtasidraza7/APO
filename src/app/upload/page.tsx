@@ -143,7 +143,6 @@ export default function UploadPage() {
         setParsedData(initialData);
         setStatus("done");
 
-        // Add welcome message to chat
         setChatHistory([
           {
             type: "ai",
@@ -158,15 +157,13 @@ export default function UploadPage() {
   const handleAiPrompt = async () => {
     if (!aiPrompt.trim() || isProcessingPrompt) return;
 
-    // Add user message to chat
     const userMessage = { type: "user", message: aiPrompt };
     setChatHistory((prev) => [...prev, userMessage]);
     setAiPrompt("");
     setIsProcessingPrompt(true);
 
-    // Simulate AI processing
     setTimeout(() => {
-      // Mock AI responses based on user input
+      
       let aiResponse = "";
       let updatedData = { ...parsedData };
 
@@ -246,7 +243,7 @@ export default function UploadPage() {
   return (
     <div className="pt-24 px-6 min-h-screen bg-[var(--color-primary)] text-white">
       <div className="max-w-6xl mx-auto">
-        {/* Header */}
+        
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -267,7 +264,6 @@ export default function UploadPage() {
           </p>
         </motion.div>
 
-        {/* Upload Box */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
@@ -347,7 +343,6 @@ export default function UploadPage() {
           </div>
         </motion.div>
 
-        {/* Upload Button */}
         <AnimatePresence>
           {file && status === "idle" && (
             <motion.div
@@ -369,7 +364,6 @@ export default function UploadPage() {
           )}
         </AnimatePresence>
 
-        {/* Status Indicator */}
         <AnimatePresence>
           {status !== "idle" && (
             <motion.div
@@ -424,7 +418,6 @@ export default function UploadPage() {
                 )}
               </div>
 
-              {/* Progress Bar */}
               {(status === "uploading" || status === "parsing") && (
                 <div className="mt-4">
                   <div className="w-full bg-gray-700 rounded-full h-2">
@@ -443,7 +436,6 @@ export default function UploadPage() {
           )}
         </AnimatePresence>
 
-        {/* Parsed Data Preview */}
         <AnimatePresence>
           {parsedData && (
             <>
@@ -475,7 +467,7 @@ export default function UploadPage() {
                 </div>
 
                 <div className="p-6">
-                  {/* Project Summary */}
+                  
                   <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
                     <div className="bg-white/5 rounded-xl p-4 border border-white/10">
                       <Target
@@ -505,7 +497,7 @@ export default function UploadPage() {
                   </div>
 
                   <div className="grid lg:grid-cols-2 gap-8">
-                    {/* Requirements */}
+                    
                     <div>
                       <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
                         <FileText size={20} />
@@ -526,7 +518,6 @@ export default function UploadPage() {
                       </div>
                     </div>
 
-                    {/* Team Allocation */}
                     <div>
                       <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
                         <Users size={20} />
@@ -558,7 +549,6 @@ export default function UploadPage() {
                 </div>
               </motion.div>
 
-              {/* AI Prompt Section */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -581,7 +571,6 @@ export default function UploadPage() {
                   </div>
                 </div>
 
-                {/* Chat History */}
                 <div className="p-6 max-h-96 overflow-y-auto">
                   <div className="space-y-4">
                     {chatHistory.map((chat, index) => (
@@ -643,7 +632,6 @@ export default function UploadPage() {
                   </div>
                 </div>
 
-                {/* Suggested Prompts */}
                 {chatHistory.length === 1 && (
                   <div className="px-6 pb-4">
                     <p className="text-sm text-gray-400 mb-3">Try asking:</p>
@@ -663,7 +651,6 @@ export default function UploadPage() {
                   </div>
                 )}
 
-                {/* Input Area */}
                 <div className="p-6 border-t border-white/10">
                   <div className="flex gap-3">
                     <div className="flex-1 relative">
@@ -696,7 +683,6 @@ export default function UploadPage() {
                 </div>
               </motion.div>
 
-              {/* Action Buttons */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}

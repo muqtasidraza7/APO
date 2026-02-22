@@ -10,7 +10,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-// We will create this action in the next step
+
 import { createWorkspace } from "./action";
 
 export default function OnboardingPage() {
@@ -24,22 +24,19 @@ export default function OnboardingPage() {
 
     setIsLoading(true);
 
-    // Call Server Action
     const result = await createWorkspace(workspaceName);
 
     if (result?.error) {
-      alert(result.error); // Simple alert for now, can be improved
+      alert(result.error); 
       setIsLoading(false);
     } else {
-      // Success! The server action will redirect, but we can double ensure
-      // The router.push is a fallback
-      // router.push("/dashboard");
+
     }
   };
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 relative overflow-hidden">
-      {/* Background Decor */}
+      
       <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-blue-100 rounded-full blur-[120px] opacity-40 pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-indigo-100 rounded-full blur-[120px] opacity-40 pointer-events-none" />
 
@@ -49,13 +46,13 @@ export default function OnboardingPage() {
         transition={{ duration: 0.5 }}
         className="w-full max-w-lg bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden"
       >
-        {/* Progress Bar (Visual Only for now) */}
+        
         <div className="h-1 bg-slate-100 w-full">
           <div className="h-full bg-[var(--color-accent)] w-1/2"></div>
         </div>
 
         <div className="p-8 md:p-12">
-          {/* Header Icon */}
+          
           <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center text-[var(--color-accent)] mb-8 mx-auto shadow-sm">
             <Building2 size={32} />
           </div>

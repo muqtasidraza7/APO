@@ -10,7 +10,6 @@ export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [activeLink, setActiveLink] = useState("Home");
 
-  // Handle scroll effect
   useEffect(() => {
     const handleScroll = () => {
       setScrolled(window.scrollY > 50);
@@ -54,7 +53,7 @@ export default function Navbar() {
       }`}
     >
       <div className="container mx-auto px-6 py-4 flex items-center justify-between">
-        {/* Logo with enhanced styling */}
+        
         <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
@@ -68,7 +67,6 @@ export default function Navbar() {
           </Link>
         </motion.div>
 
-        {/* Desktop Navigation */}
         <div className="hidden md:flex items-center gap-12">
           <motion.div
             className="flex items-center gap-8"
@@ -104,7 +102,6 @@ export default function Navbar() {
             ))}
           </motion.div>
 
-          {/* Auth Buttons with better spacing */}
           <motion.div
             className="flex items-center gap-3 ml-8 border-l border-[var(--color-border)] pl-8"
             variants={containerVariants}
@@ -130,7 +127,6 @@ export default function Navbar() {
           </motion.div>
         </div>
 
-        {/* Mobile Menu Button */}
         <motion.button
           onClick={() => setIsOpen(!isOpen)}
           className="md:hidden text-[var(--color-text)] p-2 rounded-lg bg-[var(--color-surface)] hover:bg-[var(--color-border)] transition-all duration-300"
@@ -143,7 +139,6 @@ export default function Navbar() {
         </motion.button>
       </div>
 
-      {/* Mobile Navigation with enhanced animations */}
       <AnimatePresence>
         {isOpen && (
           <motion.div
@@ -183,7 +178,6 @@ export default function Navbar() {
                 </motion.div>
               ))}
 
-              {/* Mobile Auth Buttons */}
               <motion.div
                 className="flex flex-col gap-2 w-full max-w-xs mt-4 pt-4 border-t border-[var(--color-border)]"
                 variants={itemVariants}

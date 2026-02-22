@@ -207,7 +207,7 @@ export default function ProjectDetail() {
 
   return (
     <div className="pt-24 px-6 min-h-screen bg-[var(--color-primary)] text-white">
-      {/* Header with Navigation */}
+      
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -258,7 +258,6 @@ export default function ProjectDetail() {
         </div>
       </motion.div>
 
-      {/* Tabs */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -287,7 +286,6 @@ export default function ProjectDetail() {
         ))}
       </motion.div>
 
-      {/* Project Overview Cards */}
       <motion.div
         variants={containerVariants}
         initial="hidden"
@@ -335,9 +333,9 @@ export default function ProjectDetail() {
       </motion.div>
 
       <div className="grid lg:grid-cols-3 gap-8">
-        {/* Main Content */}
+        
         <div className="lg:col-span-2 space-y-8">
-          {/* Progress Section */}
+          
           <motion.div className="bg-[var(--color-surface)] rounded-2xl border border-white/10 p-6 backdrop-blur-sm">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-semibold">Project Progress</h2>
@@ -369,7 +367,6 @@ export default function ProjectDetail() {
             </div>
           </motion.div>
 
-          {/* Tasks Section */}
           <motion.div className="bg-[var(--color-surface)] rounded-2xl border border-white/10 overflow-hidden backdrop-blur-sm">
             <div className="flex items-center justify-between p-6 border-b border-white/10">
               <h2 className="text-xl font-semibold">Tasks</h2>
@@ -462,9 +459,8 @@ export default function ProjectDetail() {
           </motion.div>
         </div>
 
-        {/* Sidebar */}
         <div className="space-y-6">
-          {/* Resources */}
+          
           <motion.div className="bg-[var(--color-surface)] rounded-2xl border border-white/10 p-6 backdrop-blur-sm">
             <h3 className="text-lg font-semibold mb-4">Team Resources</h3>
             <div className="space-y-4">
@@ -491,7 +487,6 @@ export default function ProjectDetail() {
             </div>
           </motion.div>
 
-          {/* AI Insights */}
           <motion.div className="bg-[var(--color-surface)] rounded-2xl border border-white/10 p-6 backdrop-blur-sm">
             <div className="flex items-center gap-2 mb-4">
               <AlertTriangle className="text-[var(--color-accent)]" size={20} />
@@ -526,7 +521,6 @@ export default function ProjectDetail() {
             </div>
           </motion.div>
 
-          {/* Milestones */}
           <motion.div className="bg-[var(--color-surface)] rounded-2xl border border-white/10 p-6 backdrop-blur-sm">
             <h3 className="text-lg font-semibold mb-4">Project Milestones</h3>
             <div className="space-y-3">

@@ -1,7 +1,4 @@
-/**
- * CapacityGauge Component
- * Visual gauge showing team capacity and utilization
- */
+
 
 "use client";
 
@@ -45,7 +42,7 @@ export default function CapacityGauge({
 
     return (
         <div className="bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 border border-indigo-200 rounded-2xl p-6 shadow-sm">
-            {/* Header */}
+            
             <div className="flex items-center justify-between mb-6">
                 <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                     <Users size={20} className="text-indigo-600" />
@@ -57,7 +54,6 @@ export default function CapacityGauge({
                 </div>
             </div>
 
-            {/* Main Gauge */}
             <div className="mb-6">
                 <div className="flex items-end justify-between mb-3">
                     <span className="text-sm font-medium text-slate-600">Team Utilization</span>
@@ -66,7 +62,6 @@ export default function CapacityGauge({
                     </span>
                 </div>
 
-                {/* Progress Bar */}
                 <div className="w-full bg-white rounded-full h-4 overflow-hidden border border-indigo-200 shadow-inner">
                     <div
                         className={`h-full bg-gradient-to-r ${getUtilizationColor(
@@ -77,7 +72,6 @@ export default function CapacityGauge({
                 </div>
             </div>
 
-            {/* Stats Grid */}
             <div className="grid grid-cols-3 gap-4 mb-4">
                 <div className="bg-white/70 backdrop-blur rounded-xl p-3 border border-indigo-100">
                     <div className="text-xs text-slate-600 mb-1 flex items-center gap-1">
@@ -98,7 +92,6 @@ export default function CapacityGauge({
                 </div>
             </div>
 
-            {/* Distribution */}
             <div className="grid grid-cols-3 gap-3">
                 <div className="bg-red-50 rounded-lg p-3 border border-red-200">
                     <div className="flex items-center justify-between">
