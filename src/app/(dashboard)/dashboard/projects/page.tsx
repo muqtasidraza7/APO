@@ -20,9 +20,20 @@ export default async function ProjectsListPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  const { data: membership } = await supabase
+    .from("workspace_members")
+    .select("workspace_id")
+    .eq("user_id", user.id)
+    .single();
+
+  if (!membership) {
+    redirect("/onboarding");
+  }
+
   const { data: projects, error } = await supabase
     .from("projects")
     .select("*")
+    .eq("workspace_id", membership.workspace_id)
     .order("created_at", { ascending: false });
 
   return (

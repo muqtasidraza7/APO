@@ -20,7 +20,7 @@ export default function Features() {
       opacity: 1,
       transition: { staggerChildren: 0.1 },
     },
-  };
+  } as any;
 
   const itemVariants = {
     hidden: { y: 20, opacity: 0 },
@@ -29,7 +29,7 @@ export default function Features() {
       opacity: 1,
       transition: { duration: 0.5, ease: "easeOut" },
     },
-  };
+  } as any;
 
   return (
     <section
@@ -38,7 +38,7 @@ export default function Features() {
       className="py-24 bg-[var(--color-surface)] overflow-hidden"
     >
       <div className="container mx-auto px-6 max-w-7xl">
-        
+
         <div className="mb-16 md:text-center max-w-3xl mx-auto">
           <motion.h2
             initial={{ opacity: 0, y: 10 }}
@@ -65,7 +65,7 @@ export default function Features() {
           animate={isInView ? "visible" : "hidden"}
           className="grid grid-cols-1 md:grid-cols-3 gap-6"
         >
-          
+
           <motion.div
             variants={itemVariants}
             className="md:col-span-2 group relative overflow-hidden rounded-3xl bg-white border border-[var(--color-border)] shadow-sm hover:shadow-md transition-all"
@@ -125,13 +125,11 @@ export default function Features() {
                 {[1, 2, 3].map((i) => (
                   <div
                     key={i}
-                    className={`w-10 h-10 rounded-full border-2 border-white shadow-sm flex items-center justify-center text-xs font-bold text-white relative z-${
-                      i * 10
-                    }`}
+                    className={`w-10 h-10 rounded-full border-2 border-white shadow-sm flex items-center justify-center text-xs font-bold text-white relative z-${i * 10
+                      }`}
                     style={{
-                      background: `var(--color-accent${
-                        i === 2 ? "" : "-light"
-                      })`,
+                      background: `var(--color-accent${i === 2 ? "" : "-light"
+                        })`,
                       color: i === 2 ? "white" : "var(--color-accent)",
                     }}
                   >

@@ -3,7 +3,6 @@ import Navbar from "@/app/components/Navbar";
 import Hero from "@/app/components/Hero";
 import Features from "./components/Features";
 import Workflow from "./components/Workflow";
-import WhyApo from "./components/WhyApo";
 import Footer from "./components/Footer";
 const page = () => {
   return (
@@ -12,7 +11,6 @@ const page = () => {
       <Hero />
       <Features />
       <Workflow />
-      
       <Footer />
     </div>
   );

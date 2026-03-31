@@ -2,10 +2,9 @@
 
 "use client";
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
     User,
-    Circle,
     CheckCircle2,
     Clock,
     AlertCircle,
@@ -13,6 +12,9 @@ import {
     UserPlus,
     TrendingUp,
     Trash2,
+    ShieldAlert,
+    Star,
+    X,
 } from 'lucide-react';
 
 interface Task {
@@ -21,6 +23,18 @@ interface Task {
     status: string;
     completion_percentage?: number;
     priority?: string;
+}
+
+interface WorkerPattern {
+    id: string;
+    pattern_type: 'task_incompatibility' | 'group_conflict';
+    reason: string;
+    severity: 'info' | 'caution' | 'blocker';
+    task_type?: string;
+    task_title?: string;
+    member_id_a?: string;
+    member_id_b?: string;
+    created_at: string;
 }
 
 interface TeamMember {
@@ -33,6 +47,8 @@ interface TeamMember {
     status: 'online' | 'away' | 'offline' | 'busy';
     skills: string[];
     capacity_hours_per_week: number;
+    performance_score?: number;
+    patterns?: WorkerPattern[];
     workload?: {
         total_tasks: number;
         active_tasks: number;
@@ -58,22 +74,18 @@ export default function TeamMemberCard({
     onMessage,
     onViewDetails,
 }: TeamMemberCardProps) {
+    const [showPatterns, setShowPatterns] = useState(false);
+
     const getStatusColor = (status: string) => {
         switch (status) {
-            case 'online':
-                return 'bg-green-500';
-            case 'busy':
-                return 'bg-red-500';
-            case 'away':
-                return 'bg-yellow-500';
-            default:
-                return 'bg-slate-400';
+            case 'online':  return 'bg-green-500';
+            case 'busy':    return 'bg-red-500';
+            case 'away':    return 'bg-yellow-500';
+            default:        return 'bg-slate-400';
         }
     };
 
-    const getStatusLabel = (status: string) => {
-        return status.charAt(0).toUpperCase() + status.slice(1);
-    };
+    const getStatusLabel = (status: string) => status.charAt(0).toUpperCase() + status.slice(1);
 
     const getUtilizationColor = (percentage: number) => {
         if (percentage >= 90) return 'bg-red-500';
@@ -89,6 +101,18 @@ export default function TeamMemberCard({
         return { label: 'Available', color: 'text-blue-700 bg-blue-50' };
     };
 
+    const getScoreColor = (score: number) => {
+        if (score >= 80) return 'text-green-700 bg-green-50 border-green-200';
+        if (score >= 60) return 'text-amber-700 bg-amber-50 border-amber-200';
+        return 'text-red-700 bg-red-50 border-red-200';
+    };
+
+    const getSeverityColor = (severity: string) => {
+        if (severity === 'blocker') return 'text-red-700 bg-red-50 border-red-200';
+        if (severity === 'caution') return 'text-amber-700 bg-amber-50 border-amber-200';
+        return 'text-blue-700 bg-blue-50 border-blue-200';
+    };
+
     const workload = member.workload || {
         total_tasks: 0,
         active_tasks: 0,
@@ -99,13 +123,48 @@ export default function TeamMemberCard({
     };
 
     const utilizationStatus = getUtilizationStatus(workload.utilization_percentage);
+    const performanceScore = member.performance_score ?? 100;
+    const hasPatterns = (member.patterns || []).length > 0;
+    const hasBlocker = (member.patterns || []).some(p => p.severity === 'blocker');
 
     return (
-        <div className="bg-white border border-slate-200 rounded-2xl p-6 hover:shadow-lg transition-all duration-200">
-            
+        <div className={`bg-white border rounded-2xl p-6 hover:shadow-lg transition-all duration-200 relative ${
+            hasBlocker ? 'border-red-200' : hasPatterns ? 'border-amber-200' : 'border-slate-200'
+        }`}>
+
+            {/* Pattern warning panel */}
+            {showPatterns && hasPatterns && (
+                <div className="absolute inset-x-0 top-0 z-10 bg-white border border-amber-200 rounded-2xl shadow-xl p-4">
+                    <div className="flex items-center justify-between mb-3">
+                        <span className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                            <ShieldAlert size={14} className="text-amber-500" />
+                            Recorded Patterns
+                        </span>
+                        <button onClick={() => setShowPatterns(false)} className="p-1 hover:bg-slate-100 rounded-lg">
+                            <X size={14} className="text-slate-400" />
+                        </button>
+                    </div>
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                        {(member.patterns || []).map((p, i) => (
+                            <div key={i} className={`px-3 py-2 rounded-lg border text-xs ${getSeverityColor(p.severity)}`}>
+                                <div className="flex items-center gap-1.5 mb-0.5">
+                                    <span className="font-semibold uppercase tracking-wide">{p.severity}</span>
+                                    {p.pattern_type === 'task_incompatibility' && p.task_type && (
+                                        <span className="opacity-70">· {p.task_type}</span>
+                                    )}
+                                    {p.pattern_type === 'group_conflict' && (
+                                        <span className="opacity-70">· Group Conflict</span>
+                                    )}
+                                </div>
+                                <p>{p.reason}</p>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             <div className="flex items-start justify-between mb-4">
                 <div className="flex items-start gap-3">
-                    
                     <div className="relative">
                         {member.avatar_url ? (
                             <img
@@ -118,11 +177,8 @@ export default function TeamMemberCard({
                                 <User size={24} className="text-indigo-600" />
                             </div>
                         )}
-                        
                         <div
-                            className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-white ${getStatusColor(
-                                member.status
-                            )}`}
+                            className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-white ${getStatusColor(member.status)}`}
                             title={getStatusLabel(member.status)}
                         />
                     </div>
@@ -135,9 +191,33 @@ export default function TeamMemberCard({
                     </div>
                 </div>
 
-                <span className={`px-3 py-1 rounded-full text-xs font-bold ${utilizationStatus.color}`}>
-                    {utilizationStatus.label}
-                </span>
+                <div className="flex flex-col items-end gap-1.5">
+                    <span className={`px-3 py-1 rounded-full text-xs font-bold ${utilizationStatus.color}`}>
+                        {utilizationStatus.label}
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                        {/* Performance Score */}
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold border ${getScoreColor(performanceScore)}`}>
+                            <Star size={10} />
+                            {performanceScore}
+                        </span>
+                        {/* Pattern Warning Button */}
+                        {hasPatterns && (
+                            <button
+                                onClick={() => setShowPatterns(!showPatterns)}
+                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold border transition-colors ${
+                                    hasBlocker
+                                        ? 'text-red-700 bg-red-50 border-red-200 hover:bg-red-100'
+                                        : 'text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100'
+                                }`}
+                                title="View recorded patterns"
+                            >
+                                <ShieldAlert size={10} />
+                                {(member.patterns || []).length}
+                            </button>
+                        )}
+                    </div>
+                </div>
             </div>
 
             <div className="mb-4">

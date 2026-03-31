@@ -23,6 +23,14 @@ interface TeamMember {
     skills: string[];
     capacity_hours_per_week: number;
     status: string;
+    performance_score?: number;
+    patterns?: {
+        id: string;
+        pattern_type: string;
+        reason: string;
+        severity: string;
+        task_type?: string;
+    }[];
     workload?: {
         utilization_percentage: number;
         estimated_hours_remaining: number;
@@ -82,6 +90,13 @@ export default function AssignTaskModal({ member, workspaceId, onClose, onSucces
     const [success, setSuccess] = useState(false);
     const [error, setError] = useState("");
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+    // Report issue state
+    const [reportIssueFor, setReportIssueFor] = useState<string | null>(null);
+    const [issueReason, setIssueReason] = useState("");
+    const [issueSeverity, setIssueSeverity] = useState<"info" | "caution" | "blocker">("caution");
+    const [issueTaskType, setIssueTaskType] = useState("");
+    const [reportingIssue, setReportingIssue] = useState(false);
 
     const utilization = member.workload?.utilization_percentage ?? 0;
     const isAtCapacity = utilization >= 100;
@@ -195,10 +210,48 @@ export default function AssignTaskModal({ member, workspaceId, onClose, onSucces
             if (upErr) throw upErr;
 
             setExistingAssignments(prev => prev.filter(a => a.id !== assignmentId));
+            setReportIssueFor(null);
+            setIssueReason("");
         } catch (err: any) {
             setError(err.message || "Failed to remove task.");
         } finally {
             setRemovingId(null);
+        }
+    };
+
+    const handleReportIssue = async (assignment: ExistingAssignment) => {
+        if (!issueReason.trim()) { setError("Please enter a reason for the issue."); return; }
+        try {
+            setReportingIssue(true);
+            setError("");
+
+            const response = await fetch("/api/worker-patterns", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    workspace_id: workspaceId,
+                    pattern_type: "task_incompatibility",
+                    member_id: member.id,
+                    task_type: issueTaskType || assignment.task_title,
+                    task_title: assignment.task_title,
+                    project_id: null,
+                    reason: issueReason,
+                    severity: issueSeverity,
+                }),
+            });
+
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error);
+
+            // Also remove the task
+            await handleRemove(assignment.id);
+            setReportIssueFor(null);
+            setIssueReason("");
+            setIssueTaskType("");
+        } catch (err: any) {
+            setError(err.message || "Failed to report issue.");
+        } finally {
+            setReportingIssue(false);
         }
     };
 
@@ -301,6 +354,15 @@ export default function AssignTaskModal({ member, workspaceId, onClose, onSucces
                                     ))}
                                     {member.skills.length > 4 && <span className="text-xs text-slate-400">+{member.skills.length - 4}</span>}
                                 </div>
+
+                                {member.patterns && member.patterns.length > 0 && (
+                                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 space-y-1">
+                                        <p className="font-bold flex items-center gap-1.5"><AlertCircle size={12} /> Performance Patterns Detected</p>
+                                        {member.patterns.map(p => (
+                                            <p key={p.id}>• {p.reason} ({p.severity})</p>
+                                        ))}
+                                    </div>
+                                )}
 
                                 <div>
                                     <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
@@ -427,19 +489,110 @@ export default function AssignTaskModal({ member, workspaceId, onClose, onSucces
                                     <p className="text-center text-slate-400 py-8">No active assignments to remove.</p>
                                 ) : (
                                     existingAssignments.map(a => (
-                                        <div key={a.id} className="flex items-center justify-between p-4 border border-slate-200 rounded-xl hover:bg-slate-50">
-                                            <div className="min-w-0">
-                                                <p className="font-semibold text-slate-900 text-sm truncate">{a.task_title}</p>
-                                                <p className="text-xs text-slate-500">{a.project_name} · {a.estimated_hours}h estimated</p>
+                                        <div key={a.id} className="border border-slate-200 rounded-xl overflow-hidden">
+                                            <div className="flex items-center justify-between p-4 hover:bg-slate-50">
+                                                <div className="min-w-0">
+                                                    <p className="font-semibold text-slate-900 text-sm truncate">{a.task_title}</p>
+                                                    <p className="text-xs text-slate-500">{a.project_name} · {a.estimated_hours}h estimated</p>
+                                                </div>
+                                                <div className="flex items-center gap-2 ml-3 flex-shrink-0">
+                                                    <button
+                                                        onClick={() => setReportIssueFor(reportIssueFor === a.id ? null : a.id)}
+                                                        className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1 transition-colors ${
+                                                            reportIssueFor === a.id
+                                                                ? 'bg-amber-100 text-amber-700 border border-amber-300'
+                                                                : 'bg-amber-50 hover:bg-amber-100 text-amber-600 border border-amber-200'
+                                                        }`}
+                                                    >
+                                                        <AlertCircle size={12} />
+                                                        Report Issue
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleRemove(a.id)}
+                                                        disabled={removingId === a.id}
+                                                        className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-medium flex items-center gap-1 transition-colors border border-red-200"
+                                                    >
+                                                        {removingId === a.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                                                        Remove
+                                                    </button>
+                                                </div>
                                             </div>
-                                            <button
-                                                onClick={() => handleRemove(a.id)}
-                                                disabled={removingId === a.id}
-                                                className="ml-3 flex-shrink-0 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-medium flex items-center gap-1 transition-colors"
-                                            >
-                                                {removingId === a.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                                                Remove
-                                            </button>
+
+                                            {/* Report Issue Form */}
+                                            {reportIssueFor === a.id && (
+                                                <div className="border-t border-amber-200 bg-amber-50/50 p-4 space-y-3">
+                                                    <p className="text-xs font-bold text-amber-800 flex items-center gap-1.5">
+                                                        <AlertCircle size={12} />
+                                                        Record a Performance Pattern
+                                                    </p>
+                                                    <p className="text-xs text-amber-700">This will be remembered by the AI during future assignments.</p>
+
+                                                    <div>
+                                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Task Category (optional)</label>
+                                                        <input
+                                                            type="text"
+                                                            value={issueTaskType}
+                                                            onChange={e => setIssueTaskType(e.target.value)}
+                                                            placeholder="e.g. Frontend Development, Database Design..."
+                                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                                        />
+                                                    </div>
+
+                                                    <div>
+                                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Reason *</label>
+                                                        <textarea
+                                                            value={issueReason}
+                                                            onChange={e => setIssueReason(e.target.value)}
+                                                            placeholder="e.g. Did not complete — not specialized in React / Missed deadline due to workload conflict..."
+                                                            rows={2}
+                                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
+                                                        />
+                                                    </div>
+
+                                                    <div>
+                                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Severity</label>
+                                                        <div className="flex gap-2">
+                                                            {(["info", "caution", "blocker"] as const).map(s => (
+                                                                <button
+                                                                    key={s}
+                                                                    onClick={() => setIssueSeverity(s)}
+                                                                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize border transition-colors ${
+                                                                        issueSeverity === s
+                                                                            ? s === 'blocker' ? 'bg-red-600 text-white border-red-600'
+                                                                            : s === 'caution' ? 'bg-amber-500 text-white border-amber-500'
+                                                                            : 'bg-blue-500 text-white border-blue-500'
+                                                                            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                                                                    }`}
+                                                                >
+                                                                    {s}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                        <p className="text-xs text-slate-400 mt-1">
+                                                            {issueSeverity === 'blocker' ? '🔴 AI will never assign this person to this task type' :
+                                                             issueSeverity === 'caution' ? '🟡 AI will warn but may still assign' :
+                                                             '🔵 AI notes this for context only'}
+                                                        </p>
+                                                    </div>
+
+                                                    <div className="flex gap-2">
+                                                        <button
+                                                            onClick={() => { setReportIssueFor(null); setIssueReason(""); setIssueTaskType(""); }}
+                                                            className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-50"
+                                                        >
+                                                            Cancel
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleReportIssue(a)}
+                                                            disabled={reportingIssue || !issueReason.trim()}
+                                                            className="flex-1 px-3 py-2 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
+                                                        >
+                                                            {reportingIssue ? <Loader2 size={12} className="animate-spin" /> : <AlertCircle size={12} />}
+                                                            Record & Remove Task
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     ))
                                 )}

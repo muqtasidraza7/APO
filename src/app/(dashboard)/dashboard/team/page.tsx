@@ -3,12 +3,13 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { createClient } from "../../../utils/supabase/client";
-import { Users, UserPlus, Filter, RefreshCw, CheckCircle2 } from "lucide-react";
+import { Users, UserPlus, Filter, RefreshCw, CheckCircle2, Link as LinkIcon } from "lucide-react";
 import TeamMemberCard from "../../../components/TeamMemberCard";
 import CapacityGauge from "../../../components/CapacityGauge";
 import AddMemberModal from "../../../components/AddMemberModal";
 import AIAssignPanel from "../../../components/AIAssignPanel";
 import AssignTaskModal from "../../../components/AssignTaskModal";
+import AssignmentExplainer from "../../../components/AssignmentExplainer";
 
 interface TeamMember {
   id: string;
@@ -20,6 +21,15 @@ interface TeamMember {
   status: "online" | "away" | "offline" | "busy";
   skills: string[];
   capacity_hours_per_week: number;
+  performance_score?: number;
+  patterns?: {
+    id: string;
+    pattern_type: string;
+    reason: string;
+    severity: string;
+    task_type?: string;
+    created_at: string;
+  }[];
   workload?: {
     total_tasks: number;
     active_tasks: number;
@@ -90,6 +100,32 @@ export default function TeamDashboardPage() {
         });
       }
 
+      // Fetch all unresolved patterns for this workspace
+      const { data: patterns } = await supabase
+        .from("worker_patterns")
+        .select("*")
+        .eq("workspace_id", workspaceId)
+        .eq("resolved", false);
+
+      // Group patterns by the member they apply to
+      const patternsByMember: Record<string, any[]> = {};
+      for (const p of patterns || []) {
+        if (p.pattern_type === "task_incompatibility" && p.member_id) {
+          if (!patternsByMember[p.member_id]) patternsByMember[p.member_id] = [];
+          patternsByMember[p.member_id].push(p);
+        }
+        if (p.pattern_type === "group_conflict") {
+          if (p.member_id_a) {
+            if (!patternsByMember[p.member_id_a]) patternsByMember[p.member_id_a] = [];
+            patternsByMember[p.member_id_a].push(p);
+          }
+          if (p.member_id_b) {
+            if (!patternsByMember[p.member_id_b]) patternsByMember[p.member_id_b] = [];
+            patternsByMember[p.member_id_b].push(p);
+          }
+        }
+      }
+
       const mapped: TeamMember[] = (members || []).map((m) => {
         const tasks = assignmentsByMember[m.id] || [];
         const totalHours = tasks.reduce((sum, t) => sum + t.hours, 0);
@@ -100,6 +136,8 @@ export default function TeamDashboardPage() {
           ...m,
           full_name: m.job_title || "Team Member",
           email: "",
+          performance_score: m.performance_score ?? 100,
+          patterns: patternsByMember[m.id] || [],
           workload: {
             total_tasks: tasks.length,
             active_tasks: tasks.length,
@@ -170,17 +208,17 @@ export default function TeamDashboardPage() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-8">
-      
+
       {toast && (
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 bg-white border border-green-200 shadow-xl rounded-2xl px-5 py-4 animate-in slide-in-from-bottom-4">
           <CheckCircle2 size={20} className="text-green-500 flex-shrink-0" />
           <div>
             <p className="font-semibold text-slate-900 text-sm">Task Assigned!</p>
-            <p className="text-xs text-slate-500">"{toast.title}" → {toast.project}</p>
+            <p className="text-xs text-slate-500">&quot;{toast.title}&quot; → {toast.project}</p>
           </div>
         </div>
       )}
-      
+
       <div className="flex items-end justify-between">
         <div>
           <p className="text-sm font-medium text-slate-400 mb-1">People Management</p>
@@ -193,6 +231,19 @@ export default function TeamDashboardPage() {
           >
             <RefreshCw size={16} />
             Refresh
+          </button>
+          <button
+            onClick={() => {
+              if (workspaceId && typeof window !== "undefined") {
+                const inviteLink = `${window.location.origin}/onboarding?invite=${workspaceId}`;
+                navigator.clipboard.writeText(inviteLink);
+                showToast("Invite link copied to clipboard", "Share with your team");
+              }
+            }}
+            className="px-4 py-2 bg-indigo-50 border border-indigo-100 rounded-lg text-sm font-medium text-indigo-700 hover:bg-indigo-100 transition-colors flex items-center gap-2"
+          >
+            <LinkIcon size={16} />
+            Copy Invite Link
           </button>
           <button
             onClick={() => setShowAddModal(true)}
@@ -211,6 +262,10 @@ export default function TeamDashboardPage() {
           workspaceId={workspaceId}
           teamMemberCount={teamMembers.length}
         />
+      )}
+
+      {workspaceId && (
+        <AssignmentExplainer workspaceId={workspaceId} />
       )}
 
       {teamMembers.length === 0 && !loading ? (
@@ -232,7 +287,6 @@ export default function TeamDashboardPage() {
         </div>
       ) : (
         <>
-          
           <div className="flex items-center gap-3 flex-wrap">
             <Filter size={16} className="text-slate-400" />
             <div className="flex gap-2 flex-wrap">
@@ -304,7 +358,7 @@ export default function TeamDashboardPage() {
           onSuccess={(taskTitle, projectName) => {
             setAssigningMember(null);
             showToast(taskTitle, projectName);
-            fetchTeamMembers(); 
+            fetchTeamMembers();
           }}
         />
       )}

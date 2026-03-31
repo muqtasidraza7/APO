@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation"; 
+import { useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { Mail, Lock, ArrowRight, Loader2 } from "lucide-react";
-import { login } from "../action"; 
+import { login } from "../action";
 import { useState, Suspense } from "react";
 import { OAuthButtons } from "../OAuthButtons";
 
@@ -24,7 +24,7 @@ function LoginForm() {
       setErrorMessage(result.error);
       setIsLoading(false);
     }
-    
+
   };
 
   return (

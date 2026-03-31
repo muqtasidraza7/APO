@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Menu, X, ChevronDown } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import Link from "next/link";
 
 export default function Navbar() {
@@ -46,14 +46,13 @@ export default function Navbar() {
 
   return (
     <nav
-      className={`fixed top-0 left-0 w-full z-50 transition-all duration-300 ${
-        scrolled
+      className={`fixed top-0 left-0 w-full z-50 transition-all duration-300 ${scrolled
           ? "bg-white/95 backdrop-blur-sm shadow-sm border-b border-[var(--color-border)]"
           : "bg-white/50 backdrop-blur-sm"
-      }`}
+        }`}
     >
       <div className="container mx-auto px-6 py-4 flex items-center justify-between">
-        
+
         <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
@@ -78,11 +77,10 @@ export default function Navbar() {
               <motion.div key={link.name} variants={itemVariants}>
                 <Link
                   href={link.href}
-                  className={`text-sm font-medium transition-colors duration-200 py-2 px-1 relative ${
-                    activeLink === link.name
+                  className={`text-sm font-medium transition-colors duration-200 py-2 px-1 relative ${activeLink === link.name
                       ? "text-[var(--color-accent)]"
                       : "text-[var(--color-text-light)] hover:text-[var(--color-text)]"
-                  }`}
+                    }`}
                   onClick={() => setActiveLink(link.name)}
                 >
                   {link.name}
@@ -163,11 +161,10 @@ export default function Navbar() {
                 >
                   <Link
                     href={link.href}
-                    className={`text-sm font-medium py-2 px-6 rounded-md w-full block transition-all duration-200 ${
-                      activeLink === link.name
+                    className={`text-sm font-medium py-2 px-6 rounded-md w-full block transition-all duration-200 ${activeLink === link.name
                         ? "bg-[var(--color-surface)] text-[var(--color-accent)] font-semibold"
                         : "text-[var(--color-text-light)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]"
-                    }`}
+                      }`}
                     onClick={() => {
                       setActiveLink(link.name);
                       setIsOpen(false);

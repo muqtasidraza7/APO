@@ -31,9 +31,11 @@ export async function POST(request: NextRequest) {
         }
 
         const effectiveWorkspaceId = project.workspace_id || workspaceId;
+
+        // Fetch team members with performance score
         const { data: teamMembers, error: teamError } = await supabase
             .from("team_members")
-            .select("id, job_title, skills, capacity_hours_per_week, status, hourly_rate")
+            .select("id, job_title, skills, capacity_hours_per_week, status, hourly_rate, performance_score")
             .eq("workspace_id", effectiveWorkspaceId);
 
         if (teamError) {
@@ -43,6 +45,44 @@ export async function POST(request: NextRequest) {
         if (!teamMembers || teamMembers.length === 0) {
             return NextResponse.json({ error: "No team members found in this workspace. Add team members first." }, { status: 404 });
         }
+
+        // Fetch all unresolved patterns for this workspace
+        const { data: patterns } = await supabase
+            .from("worker_patterns")
+            .select("*")
+            .eq("workspace_id", effectiveWorkspaceId)
+            .eq("resolved", false);
+
+        // Build member lookup for names
+        const memberMap: Record<string, string> = {};
+        for (const m of teamMembers) {
+            memberMap[m.id] = m.job_title || "Team Member";
+        }
+
+        // Separate patterns by type for the prompt
+        const taskPatterns = (patterns || [])
+            .filter((p: any) => p.pattern_type === "task_incompatibility")
+            .map((p: any) => ({
+                worker_id: p.member_id,
+                worker_name: memberMap[p.member_id] || p.member_id,
+                task_type: p.task_type || "General",
+                task_title: p.task_title || null,
+                reason: p.reason,
+                severity: p.severity,
+                date: new Date(p.created_at).toLocaleDateString("en-GB"),
+            }));
+
+        const groupPatterns = (patterns || [])
+            .filter((p: any) => p.pattern_type === "group_conflict")
+            .map((p: any) => ({
+                worker_a_id: p.member_id_a,
+                worker_b_id: p.member_id_b,
+                worker_a_name: memberMap[p.member_id_a] || p.member_id_a,
+                worker_b_name: memberMap[p.member_id_b] || p.member_id_b,
+                reason: p.reason,
+                severity: p.severity,
+                date: new Date(p.created_at).toLocaleDateString("en-GB"),
+            }));
 
         const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -57,8 +97,17 @@ export async function POST(request: NextRequest) {
                 skills: m.skills || [],
                 capacity_hours_per_week: m.capacity_hours_per_week || 40,
                 status: m.status,
+                performance_score: m.performance_score ?? 100,
             }))
         );
+
+        const patternsSection = taskPatterns.length === 0 && groupPatterns.length === 0
+            ? "No patterns recorded — assign freely based on skills."
+            : `WORKER-TASK INCOMPATIBILITIES (avoid these combinations):
+${JSON.stringify(taskPatterns, null, 2)}
+
+GROUP CONFLICTS (do not co-assign these pairs to the same project):
+${JSON.stringify(groupPatterns, null, 2)}`;
 
         const prompt = `
 You are an expert Project Manager AI. Assign the following PROJECT MILESTONES to the most suitable TEAM MEMBERS.
@@ -68,15 +117,22 @@ RULES:
 2. Distribute work fairly — do not assign everything to one person
 3. Each milestone needs exactly ONE assignee
 4. Use ONLY the IDs provided in the team list
-5. Return ONLY a JSON array, no extra text
+5. CRITICAL: Do NOT assign a member to a task if a BLOCKER pattern exists for that worker-task combination
+6. For CAUTION patterns, you may still assign but MUST mention the pattern in the reasoning
+7. Prefer members with higher performance_score when skill match is equal
+8. Do NOT co-assign two members with a BLOCKER group_conflict to the same project milestones
+9. Return ONLY a JSON array, no extra text
 
 PROJECT: "${project.name}"
 
 MILESTONES:
 ${milestonesJson}
 
-TEAM MEMBERS:
+TEAM MEMBERS (with performance scores):
 ${teamJson}
+
+PATTERN MEMORY:
+${patternsSection}
 
 Return this JSON structure:
 [
@@ -84,7 +140,8 @@ Return this JSON structure:
     "task_title": "Exact milestone title from list",
     "assigned_to": "team-member-uuid",
     "assigned_to_name": "Job title of the assigned person",
-    "reasoning": "One sentence explanation"
+    "reasoning": "Explain the assignment. If a pattern influenced this decision, cite it explicitly with the date and reason.",
+    "pattern_warning": null or "Brief warning text if a caution pattern applies"
   }
 ]
 `;
@@ -101,7 +158,6 @@ Return this JSON structure:
 
         try {
             const parsed = JSON.parse(rawText);
-            
             assignments = Array.isArray(parsed)
                 ? parsed
                 : (parsed.assignments || parsed.results || parsed.data || []);

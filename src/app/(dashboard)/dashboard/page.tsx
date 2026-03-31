@@ -32,12 +32,13 @@ export default async function DashboardPage() {
     redirect("/onboarding");
   }
 
-  const workspaceName = membership.workspace.name;
+  const workspace = membership.workspace as unknown as { id: string; name: string; created_at: string };
+  const workspaceName = workspace.name;
 
   const { data: projects } = await supabase
     .from("projects")
     .select("*")
-    .eq("owner_id", user.id)
+    .eq("workspace_id", workspace.id)
     .order("created_at", { ascending: false });
 
   const hasProjects = projects && projects.length > 0;
@@ -204,7 +205,7 @@ export default async function DashboardPage() {
       </div>
 
       <div className="grid md:grid-cols-3 gap-8">
-        
+
         <div className="md:col-span-2 space-y-6">
           <h3 className="font-bold text-slate-900 flex items-center gap-2">
             <Activity size={18} className="text-[var(--color-accent)]" />
@@ -233,11 +234,10 @@ export default async function DashboardPage() {
                       className="p-4 flex gap-4 hover:bg-slate-50 transition-colors"
                     >
                       <div
-                        className={`w-2 h-2 mt-2 rounded-full flex-shrink-0 ${
-                          log.type === "warning"
+                        className={`w-2 h-2 mt-2 rounded-full flex-shrink-0 ${log.type === "warning"
                             ? "bg-amber-400"
                             : "bg-green-400"
-                        }`}
+                          }`}
                       />
                       <div>
                         <p className="text-sm text-slate-900">
