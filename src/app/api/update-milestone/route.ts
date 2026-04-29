@@ -60,9 +60,12 @@ export async function POST(request: NextRequest) {
             .single();
 
         if (currentProject?.ai_data?.milestones) {
+            let currentMilestoneTitle = "";
+            
             const milestones = currentProject.ai_data.milestones.map((m: any, idx: number) => {
                 const mId = m.id || `temp-${idx}`;
                 if (mId === milestoneId) {
+                    currentMilestoneTitle = m.title || m.task_name;
                     return { ...m, ...updateData };
                 }
                 return m;
@@ -84,6 +87,15 @@ export async function POST(request: NextRequest) {
                     { error: "Failed to update milestone" },
                     { status: 500 }
                 );
+            }
+
+            // Sync with Roadmap Assignments
+            if (currentMilestoneTitle && updates.status) {
+                await supabase
+                    .from("project_assignments")
+                    .update({ status: updates.status })
+                    .eq("project_id", projectId)
+                    .eq("task_name", currentMilestoneTitle);
             }
         }
 

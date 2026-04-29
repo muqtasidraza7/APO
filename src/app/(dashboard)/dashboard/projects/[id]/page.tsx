@@ -183,13 +183,22 @@ export default function ProjectDetailsPage() {
             </p>
           </div>
 
-          <Link
-            href={`/dashboard/projects/${id}/allocation`}
-            className="btn btn-primary shadow-lg shadow-indigo-100"
-          >
-            <Users size={18} className="mr-2" />
-            View Resource Allocation
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link
+              href={`/dashboard/projects/${id}/roadmap`}
+              className="px-4 py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-medium rounded-lg transition-colors flex items-center shadow-sm"
+            >
+              <Calendar size={18} className="mr-2" />
+              Live Roadmap
+            </Link>
+            <Link
+              href={`/dashboard/projects/${id}/allocation`}
+              className="btn btn-primary shadow-lg shadow-indigo-100"
+            >
+              <Users size={18} className="mr-2" />
+              Resource Allocation
+            </Link>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

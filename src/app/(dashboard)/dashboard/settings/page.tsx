@@ -13,6 +13,8 @@ import {
     Loader2,
     CheckCircle2,
     Save,
+    User,
+    KeyRound,
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -33,6 +35,12 @@ export default function SettingsPage() {
     const [saveSuccess, setSaveSuccess] = useState(false);
     const [saveError, setSaveError] = useState("");
 
+    const [userEmail, setUserEmail] = useState("");
+    const [passwordInput, setPasswordInput] = useState("");
+    const [passwordConfirm, setPasswordConfirm] = useState("");
+    const [isChangingPwd, setIsChangingPwd] = useState(false);
+    const [pwdMessage, setPwdMessage] = useState({ type: "", text: "" });
+
     const [skills, setSkills] = useState<string[]>([]);
     const [jobTitle, setJobTitle] = useState("");
     const [expLevel, setExpLevel] = useState("");
@@ -49,6 +57,8 @@ export default function SettingsPage() {
         const fetchProfile = async () => {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) return;
+
+            setUserEmail(user.email || "");
 
             const { data } = await supabase
                 .from("workspace_members")
@@ -135,6 +145,31 @@ export default function SettingsPage() {
             setTimeout(() => setSaveSuccess(false), 3000);
         }
         setSaving(false);
+    };
+
+    const handleChangePassword = async () => {
+        if (!passwordInput || passwordInput !== passwordConfirm) {
+            setPwdMessage({ type: "error", text: "Passwords must match and cannot be empty." });
+            return;
+        }
+        if (passwordInput.length < 6) {
+            setPwdMessage({ type: "error", text: "Password must be at least 6 characters." });
+            return;
+        }
+
+        setIsChangingPwd(true);
+        setPwdMessage({ type: "", text: "" });
+
+        const { error } = await supabase.auth.updateUser({ password: passwordInput });
+
+        if (error) {
+            setPwdMessage({ type: "error", text: error.message });
+        } else {
+            setPwdMessage({ type: "success", text: "Password updated successfully!" });
+            setPasswordInput("");
+            setPasswordConfirm("");
+        }
+        setIsChangingPwd(false);
     };
 
     if (loading) {
@@ -323,6 +358,79 @@ export default function SettingsPage() {
                             <><Save size={18} /> Save Skill Profile</>
                         )}
                     </button>
+                </div>
+            </motion.div>
+
+            {/* Account & Security Card */}
+            <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1 }}
+                className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
+            >
+                <div className="p-6 border-b border-slate-100 flex items-center gap-3">
+                    <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center">
+                        <User size={20} className="text-slate-600" />
+                    </div>
+                    <div>
+                        <h2 className="text-lg font-bold text-slate-900">Account &amp; Security</h2>
+                        <p className="text-sm text-slate-500">Manage your login credentials</p>
+                    </div>
+                </div>
+
+                <div className="p-6 space-y-6">
+                    <div>
+                        <label className="text-sm font-semibold text-slate-700">Email Address</label>
+                        <input
+                            type="email"
+                            value={userEmail}
+                            disabled
+                            className="w-full mt-1.5 px-4 py-2.5 bg-slate-50 text-slate-500 border border-slate-200 rounded-xl text-sm"
+                        />
+                        <p className="text-xs text-slate-400 mt-2">Email changes must be requested through your administrator.</p>
+                    </div>
+
+                    <div className="border-t border-slate-100 pt-6 space-y-4">
+                        <h3 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+                            <KeyRound size={16} className="text-slate-400" /> Change Password
+                        </h3>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="text-xs font-semibold text-slate-600">New Password</label>
+                                <input
+                                    type="password"
+                                    value={passwordInput}
+                                    onChange={(e) => setPasswordInput(e.target.value)}
+                                    className="w-full mt-1.5 px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/20 focus:border-[var(--color-accent)]"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs font-semibold text-slate-600">Confirm Password</label>
+                                <input
+                                    type="password"
+                                    value={passwordConfirm}
+                                    onChange={(e) => setPasswordConfirm(e.target.value)}
+                                    className="w-full mt-1.5 px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/20 focus:border-[var(--color-accent)]"
+                                />
+                            </div>
+                        </div>
+
+                        {pwdMessage.text && (
+                            <div className={`p-3 text-sm rounded-xl ${pwdMessage.type === "error" ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700"}`}>
+                                {pwdMessage.text}
+                            </div>
+                        )}
+
+                        <button
+                            onClick={handleChangePassword}
+                            disabled={isChangingPwd || !passwordInput}
+                            className="bg-slate-900 hover:bg-black text-white px-5 py-2.5 rounded-xl font-medium text-sm transition-colors flex items-center gap-2 disabled:opacity-50"
+                        >
+                            {isChangingPwd ? <Loader2 size={16} className="animate-spin" /> : <KeyRound size={16} />}
+                            Update Password
+                        </button>
+                    </div>
                 </div>
             </motion.div>
         </div>

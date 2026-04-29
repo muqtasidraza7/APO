@@ -97,6 +97,8 @@ export default function AssignTaskModal({ member, workspaceId, onClose, onSucces
     const [issueSeverity, setIssueSeverity] = useState<"info" | "caution" | "blocker">("caution");
     const [issueTaskType, setIssueTaskType] = useState("");
     const [reportingIssue, setReportingIssue] = useState(false);
+    // 8.3 Fix: two-step confirm before removing a task
+    const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
 
     const utilization = member.workload?.utilization_percentage ?? 0;
     const isAtCapacity = utilization >= 100;
@@ -201,10 +203,17 @@ export default function AssignTaskModal({ member, workspaceId, onClose, onSucces
     const handleRemove = async (assignmentId: string) => {
         try {
             setRemovingId(assignmentId);
-            
+
+            // Read current metadata first so we don't overwrite task_title / project_name etc.
+            const { data: existing } = await supabase
+                .from("team_activity")
+                .select("metadata")
+                .eq("id", assignmentId)
+                .single();
+
             const { error: upErr } = await supabase
                 .from("team_activity")
-                .update({ metadata: { status: "removed" } })
+                .update({ metadata: { ...(existing?.metadata || {}), status: "removed" } })
                 .eq("id", assignmentId);
 
             if (upErr) throw upErr;
@@ -508,12 +517,26 @@ export default function AssignTaskModal({ member, workspaceId, onClose, onSucces
                                                         Report Issue
                                                     </button>
                                                     <button
-                                                        onClick={() => handleRemove(a.id)}
+                                                        onClick={() => {
+                                                            if (confirmRemoveId === a.id) {
+                                                                handleRemove(a.id);
+                                                                setConfirmRemoveId(null);
+                                                            } else {
+                                                                setConfirmRemoveId(a.id);
+                                                            }
+                                                        }}
                                                         disabled={removingId === a.id}
-                                                        className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-medium flex items-center gap-1 transition-colors border border-red-200"
+                                                        className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1 transition-all border ${
+                                                            confirmRemoveId === a.id
+                                                                ? "bg-red-600 text-white border-red-700 animate-pulse"
+                                                                : "bg-red-50 hover:bg-red-100 text-red-600 border-red-200"
+                                                        }`}
                                                     >
-                                                        {removingId === a.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                                                        Remove
+                                                        {removingId === a.id
+                                                            ? <Loader2 size={12} className="animate-spin" />
+                                                            : <Trash2 size={12} />
+                                                        }
+                                                        {confirmRemoveId === a.id ? "Confirm?" : "Remove"}
                                                     </button>
                                                 </div>
                                             </div>

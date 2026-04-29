@@ -1,17 +1,25 @@
 import { NextResponse } from "next/server";
 import { createClient } from "../../utils/supabase/server";
-import Groq from "groq-sdk";
-
-const PDFParser = require("pdf2json");
+import { getGroqModel } from "../../utils/ai";
+import { projectDocumentSchema } from "../../utils/schemas";
+import { PromptTemplate } from "@langchain/core/prompts";
+import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  try {
-    const { projectId } = await request.json();
-    console.log("1. Processing Project ID (Llama 3):", projectId);
+  const supabase = await createClient();
+  let projectId: string | undefined;
 
-    const supabase = await createClient();
+  try {
+    const body = await request.json();
+    projectId = body.projectId;
+
+    // ── Auth check ───────────────────────────────────────────────────────────
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
     const { data: project } = await supabase
       .from("projects")
@@ -23,123 +31,52 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Project file URL missing" }, { status: 404 });
     }
 
+    // ── Workspace ownership check ─────────────────────────────────────────────
+    const { data: membership } = await supabase
+      .from("workspace_members")
+      .select("workspace_id")
+      .eq("user_id", user.id)
+      .single();
+
+    if (!membership || membership.workspace_id !== project.workspace_id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const fileResponse = await fetch(project.original_file_url);
     if (!fileResponse.ok) throw new Error("Failed to download file");
 
     const arrayBuffer = await fileResponse.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    
+    // Load and parse PDF using LangChain
+    const blob = new Blob([arrayBuffer], { type: "application/pdf" });
+    const loader = new PDFLoader(blob as any, { parsedItemSeparator: " " });
+    const docs = await loader.load();
+    const extractedText = docs.map((doc) => doc.pageContent).join("\n");
 
-    console.log("2. Extracting Text from PDF...");
-    const extractedText = await parsePdfBuffer(buffer);
-    console.log("3. Extracted Characters:", extractedText.length);
+    // Initialize LangChain ChatGroq with structured output
+    const model = getGroqModel(0.1);
+    const structuredModel = model.withStructuredOutput(projectDocumentSchema);
 
-    if (!process.env.GROQ_API_KEY) {
-      throw new Error("Missing GROQ_API_KEY in .env.local");
-    }
+    const promptTemplate = PromptTemplate.fromTemplate(`
+You are an expert Project Manager AI analyzing project documents.
+Extract ALL relevant information from the provided document text.
 
-    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+IMPORTANT: 
+- Extract as much detail as possible from the document
+- If information is missing, use reasonable estimates based on context
+- For tasks, break down requirements into actionable items
+- Identify project type (software, construction, marketing, consulting, etc.)
 
-    const prompt = `
-      You are an expert Project Manager AI analyzing project documents.
-      Extract ALL relevant information and return a JSON object with this EXACT structure.
-      Do not include any explanation, just the JSON.
-      
-      IMPORTANT: 
-      - Extract as much detail as possible from the document
-      - If information is missing, use reasonable estimates based on context
-      - For tasks, break down requirements into actionable items
-      - Identify project type (software, construction, marketing, consulting, etc.)
-      
-      Structure:
-      {
-        "summary": "2-3 sentence executive summary of the project",
-        "project_type": "software|construction|marketing|consulting|research|other",
-        "budget_estimate": 10000,
-        "currency": "USD",
-        "timeline_weeks": 12,
-        "start_date": "2025-03-01" (estimate if not specified),
-        "end_date": "2025-05-24" (calculate from timeline),
-        
-        "client_info": {
-          "name": "Client Company Name",
-          "contact_person": "John Doe",
-          "email": "john@example.com",
-          "phone": "+1234567890",
-          "stakeholders": ["Person 1", "Person 2"]
-        },
-        
-        "requirements": [
-          "Detailed requirement 1",
-          "Detailed requirement 2"
-        ],
-        
-        "tasks": [
-          {
-            "title": "Task Name",
-            "description": "Detailed description",
-            "estimated_hours": 40,
-            "required_skills": ["Skill 1", "Skill 2"],
-            "priority": "high|medium|low",
-            "dependencies": ["Task title it depends on"],
-            "acceptance_criteria": ["Criteria 1", "Criteria 2"]
-          }
-        ],
-        
-        "milestones": [
-          { 
-            "title": "Milestone Name", 
-            "week": 1, 
-            "deliverable": "What will be delivered",
-            "success_criteria": "How to measure success"
-          }
-        ],
-        
-        "risks": [
-          {
-            "description": "Risk description",
-            "severity": "high|medium|low",
-            "mitigation": "How to mitigate this risk"
-          }
-        ],
-        
-        "required_skills": ["Skill 1", "Skill 2", "Skill 3"],
-        
-        "success_criteria": {
-          "kpis": ["KPI 1", "KPI 2"],
-          "acceptance_criteria": ["Criteria 1", "Criteria 2"],
-          "quality_metrics": ["Metric 1", "Metric 2"]
-        },
-        
-        "constraints": {
-          "technical": ["Constraint 1"],
-          "business": ["Constraint 2"],
-          "regulatory": ["Constraint 3"]
-        },
-        
-        "assumptions": ["Assumption 1", "Assumption 2"],
-        
-        "custom_fields": {
-          "any_other_relevant_data": "extracted from document"
-        }
-      }
+DOCUMENT TEXT:
+{documentText}
+`);
 
-      DOCUMENT TEXT:
-      ${extractedText.substring(0, 25000)}
-    `;
-
-    console.log("4. Sending to Llama 3-70b...");
-
-    const chatCompletion = await groq.chat.completions.create({
-      "messages": [{ "role": "user", "content": prompt }],
-      "model": "llama-3.3-70b-versatile", 
-      "temperature": 0.1, 
-      "response_format": { type: "json_object" } 
+    const prompt = await promptTemplate.invoke({
+      documentText: extractedText.substring(0, 25000)
     });
 
-    const aiResponseContent = chatCompletion.choices[0]?.message?.content || "{}";
-    const aiData = JSON.parse(aiResponseContent);
-
-    console.log("5. Llama Responded Success");
+    // Generate structured output
+    const aiData = await structuredModel.invoke(prompt);
 
     const {
       client_info,
@@ -156,18 +93,18 @@ export async function POST(request: Request) {
       ...custom_fields,
       constraints,
       assumptions,
-      requirements: aiData.requirements || []
+      requirements: aiData.requirements || [],
     };
 
     const { error: updateError } = await supabase
       .from("projects")
       .update({
-        ai_data: coreAiData, 
-        ai_status: 'completed',
-        project_type: project_type || 'general',
+        ai_data: coreAiData,
+        ai_status: "completed",
+        project_type: project_type || "general",
         client_info: client_info || {},
         success_criteria: success_criteria || {},
-        custom_fields: customFieldsData
+        custom_fields: customFieldsData,
       })
       .eq("id", projectId);
 
@@ -180,50 +117,27 @@ export async function POST(request: Request) {
         description: task.description,
         estimated_hours: task.estimated_hours,
         required_skills: task.required_skills || [],
-        priority: task.priority || 'medium',
+        priority: task.priority || "medium",
         acceptance_criteria: task.acceptance_criteria || [],
         source_requirement: task.description,
         created_by_ai: true,
-        status: 'pending'
+        status: "pending",
       }));
 
-      const { error: tasksError } = await supabase
-        .from("project_tasks")
-        .insert(tasksToInsert);
-
-      if (tasksError) {
-        console.error("Error saving tasks:", tasksError);
-        
-      }
+      await supabase.from("project_tasks").insert(tasksToInsert);
     }
 
     return NextResponse.json({ success: true, data: aiData });
 
   } catch (error: any) {
-    console.error("Llama Processing Error:", error);
+    if (projectId) {
+      await supabase
+        .from("projects")
+        .update({ ai_status: "failed" })
+        .eq("id", projectId);
+    }
+
+    console.error("Process Document Error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
-
-function parsePdfBuffer(buffer: Buffer): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const pdfParser = new PDFParser(null, 1);
-
-    pdfParser.on("pdfParser_dataError", (errData: any) => reject(errData.parserError));
-
-    pdfParser.on("pdfParser_dataReady", () => {
-      const rawText = pdfParser.getRawTextContent();
-
-      try {
-        
-        resolve(decodeURIComponent(rawText));
-      } catch (e) {
-        
-        console.warn("PDF decoding warning (using raw text):", e);
-        resolve(rawText);
-      }
-    });
-
-    pdfParser.parseBuffer(buffer);
-  });
 }

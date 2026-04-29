@@ -35,11 +35,25 @@ export default async function DashboardPage() {
   const workspace = membership.workspace as unknown as { id: string; name: string; created_at: string };
   const workspaceName = workspace.name;
 
+  // Calculate days since workspace creation (fix: was hardcoded "Day 1")
+  const daysSinceCreation = Math.max(
+    1,
+    Math.floor((Date.now() - new Date(workspace.created_at).getTime()) / 86_400_000)
+  );
+
   const { data: projects } = await supabase
     .from("projects")
     .select("*")
     .eq("workspace_id", workspace.id)
     .order("created_at", { ascending: false });
+
+  // 3.3 Fix: fetch real activity from team_activity instead of simulation_logs
+  const { data: recentActivity } = await supabase
+    .from("team_activity")
+    .select("id, description, activity_type, created_at, metadata")
+    .eq("workspace_id", workspace.id)
+    .order("created_at", { ascending: false })
+    .limit(8);
 
   const hasProjects = projects && projects.length > 0;
 
@@ -64,7 +78,7 @@ export default async function DashboardPage() {
                 day: "numeric",
               })}
             </p>
-            <p className="text-xs text-slate-500">Day 1 of Operations</p>
+            <p className="text-xs text-slate-500">Day {daysSinceCreation} of Operations</p>
           </div>
         </div>
 
@@ -94,9 +108,9 @@ export default async function DashboardPage() {
                   Upload & Parse Document{" "}
                   <ArrowRight size={18} className="ml-2" />
                 </Link>
-                <span className="text-xs text-slate-400 font-medium">
-                  Supports .PDF, .DOCX
-                </span>
+                  <span className="text-xs text-slate-400 font-medium">
+                    PDF only · Max 50MB
+                  </span>
               </div>
             </div>
           </div>
@@ -174,7 +188,10 @@ export default async function DashboardPage() {
           <div className="flex items-center gap-2 text-slate-500 mb-2 text-xs font-bold uppercase tracking-wider">
             <Activity size={14} /> Health Score
           </div>
-          <div className="text-3xl font-bold text-green-600">98%</div>
+          <div className="text-3xl font-bold text-green-600">
+            {Math.round((activeProjects.length / Math.max(projects.length, 1)) * 100)}%
+          </div>
+          <div className="text-xs text-slate-400 mt-1">{activeProjects.length}/{projects.length} analysed</div>
         </div>
 
         <div className="bg-indigo-600 p-5 rounded-xl border border-indigo-700 shadow-sm text-white relative overflow-hidden group cursor-pointer hover:bg-indigo-700 transition-colors">
@@ -213,50 +230,39 @@ export default async function DashboardPage() {
           </h3>
 
           <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-            {projects.flatMap((p) =>
-              (p.simulation_logs || []).map((log: any) => ({
-                ...log,
-                projectName: p.name,
-              }))
-            ).length > 0 ? (
+            {(recentActivity || []).length > 0 ? (
               <div className="divide-y divide-slate-100">
-                {projects
-                  .flatMap((p) =>
-                    (p.simulation_logs || []).map((log: any) => ({
-                      ...log,
-                      projectName: p.name,
-                    }))
-                  )
-                  .slice(0, 5)
-                  .map((log: any, i: number) => (
-                    <div
-                      key={i}
-                      className="p-4 flex gap-4 hover:bg-slate-50 transition-colors"
-                    >
-                      <div
-                        className={`w-2 h-2 mt-2 rounded-full flex-shrink-0 ${log.type === "warning"
-                            ? "bg-amber-400"
-                            : "bg-green-400"
-                          }`}
-                      />
-                      <div>
-                        <p className="text-sm text-slate-900">
+                {(recentActivity || []).map((act: any) => {
+                  const isAssignment = act.activity_type === "task_assigned";
+                  const timeAgo = new Date(act.created_at).toLocaleDateString("en-US", {
+                    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+                  });
+                  return (
+                    <div key={act.id} className="p-4 flex gap-4 hover:bg-slate-50 transition-colors">
+                      <div className={`w-2 h-2 mt-2 rounded-full flex-shrink-0 ${
+                        isAssignment ? "bg-indigo-400" : "bg-green-400"
+                      }`} />
+                      <div className="min-w-0">
+                        <p className="text-sm text-slate-900 truncate">
                           <span className="font-semibold">
-                            {log.projectName}:
-                          </span>{" "}
-                          {log.message}
+                            {isAssignment ? "Task Assigned" : act.activity_type?.replace(/_/g, " ")}
+                          </span>
+                          {act.metadata?.task_title && (
+                            <span className="text-slate-600"> — {act.metadata.task_title}</span>
+                          )}
+                          {act.metadata?.project_name && (
+                            <span className="text-slate-400"> in {act.metadata.project_name}</span>
+                          )}
                         </p>
-                        <p className="text-xs text-slate-400 mt-1">
-                          Week {log.week} • {log.timestamp}
-                        </p>
+                        <p className="text-xs text-slate-400 mt-0.5">{timeAgo}</p>
                       </div>
                     </div>
-                  ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="p-12 text-center text-slate-400 text-sm">
-                No activity recorded yet. Run a simulation in the Roadmap page
-                to see events here.
+                No activity yet. Assign team members to tasks to see events here.
               </div>
             )}
           </div>
