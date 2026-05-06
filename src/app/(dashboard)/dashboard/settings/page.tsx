@@ -15,6 +15,9 @@ import {
     Save,
     User,
     KeyRound,
+    Bell,
+    Moon,
+    Clock,
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -45,7 +48,12 @@ export default function SettingsPage() {
     const [jobTitle, setJobTitle] = useState("");
     const [expLevel, setExpLevel] = useState("");
     const [yearsExp, setYearsExp] = useState<number | "">("");
+    const [capacityHours, setCapacityHours] = useState<number | "">(40);
     const [customSkill, setCustomSkill] = useState("");
+
+    const [emailNotifyTasks, setEmailNotifyTasks] = useState(true);
+    const [emailNotifyRisks, setEmailNotifyRisks] = useState(true);
+    const [theme, setTheme] = useState("system");
 
     const [cvFile, setCvFile] = useState<File | null>(null);
     const [isParsing, setIsParsing] = useState(false);
@@ -62,7 +70,7 @@ export default function SettingsPage() {
 
             const { data } = await supabase
                 .from("workspace_members")
-                .select("user_skills, job_title, experience_level, years_of_experience, user_cv_url")
+                .select("user_skills, job_title, experience_level, years_of_experience, user_cv_url, capacity_hours_per_week")
                 .eq("user_id", user.id)
                 .single();
 
@@ -71,6 +79,7 @@ export default function SettingsPage() {
                 setJobTitle(data.job_title || "");
                 setExpLevel(data.experience_level || "");
                 setYearsExp(data.years_of_experience || "");
+                if (data.capacity_hours_per_week) setCapacityHours(data.capacity_hours_per_week);
             }
             setLoading(false);
         };
@@ -136,6 +145,7 @@ export default function SettingsPage() {
             job_title: jobTitle,
             experience_level: expLevel,
             years_of_experience: yearsExp ? Number(yearsExp) : undefined,
+            capacity_hours_per_week: capacityHours ? Number(capacityHours) : undefined,
         });
 
         if (result?.error) {
@@ -214,8 +224,8 @@ export default function SettingsPage() {
                             onDrop={handleDrop}
                             onClick={() => fileInputRef.current?.click()}
                             className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-all ${isDragging ? "border-[var(--color-accent)] bg-indigo-50" :
-                                    cvFile ? "border-green-400 bg-green-50" :
-                                        "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                                cvFile ? "border-green-400 bg-green-50" :
+                                    "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
                                 }`}
                         >
                             <input
@@ -254,16 +264,31 @@ export default function SettingsPage() {
                         )}
                     </div>
 
-                    {/* Job Title */}
-                    <div className="space-y-1.5">
-                        <label className="text-sm font-semibold text-slate-700">Job Title</label>
-                        <input
-                            type="text"
-                            value={jobTitle}
-                            onChange={(e) => setJobTitle(e.target.value)}
-                            placeholder="e.g. Senior Frontend Developer"
-                            className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/20 focus:border-[var(--color-accent)]"
-                        />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                            <label className="text-sm font-semibold text-slate-700">Job Title</label>
+                            <input
+                                type="text"
+                                value={jobTitle}
+                                onChange={(e) => setJobTitle(e.target.value)}
+                                placeholder="e.g. Senior Frontend Developer"
+                                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/20 focus:border-[var(--color-accent)]"
+                            />
+                        </div>
+                        <div className="space-y-1.5">
+                            <label className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
+                                Weekly Capacity (Hours) <Clock size={14} className="text-slate-400" />
+                            </label>
+                            <input
+                                type="number"
+                                value={capacityHours}
+                                onChange={(e) => setCapacityHours(e.target.value ? Number(e.target.value) : "")}
+                                placeholder="e.g. 40"
+                                min={0} max={168}
+                                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/20 focus:border-[var(--color-accent)]"
+                            />
+                            <p className="text-[10px] text-slate-400">Used by AI to prevent assigning you too many tasks.</p>
+                        </div>
                     </div>
 
                     {/* Experience */}
@@ -277,8 +302,8 @@ export default function SettingsPage() {
                                         type="button"
                                         onClick={() => setExpLevel(lvl)}
                                         className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${expLevel === lvl
-                                                ? "bg-[var(--color-accent)] text-white"
-                                                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                                            ? "bg-[var(--color-accent)] text-white"
+                                            : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                                             }`}
                                     >
                                         {lvl}
@@ -394,7 +419,7 @@ export default function SettingsPage() {
                         <h3 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
                             <KeyRound size={16} className="text-slate-400" /> Change Password
                         </h3>
-                        
+
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label className="text-xs font-semibold text-slate-600">New Password</label>
@@ -430,6 +455,74 @@ export default function SettingsPage() {
                             {isChangingPwd ? <Loader2 size={16} className="animate-spin" /> : <KeyRound size={16} />}
                             Update Password
                         </button>
+                    </div>
+                </div>
+            </motion.div>
+
+            {/* Preferences Card */}
+            <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2 }}
+                className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
+            >
+                <div className="p-6 border-b border-slate-100 flex items-center gap-3">
+                    <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center">
+                        <Bell size={20} className="text-emerald-600" />
+                    </div>
+                    <div>
+                        <h2 className="text-lg font-bold text-slate-900">Preferences</h2>
+                        <p className="text-sm text-slate-500">Manage notifications and app appearance</p>
+                    </div>
+                </div>
+
+                <div className="p-6 space-y-6">
+                    <div className="space-y-4">
+                        <h3 className="font-semibold text-slate-800 text-sm">Notifications</h3>
+
+                        <div className="flex items-center justify-between p-4 border border-slate-200 rounded-xl">
+                            <div>
+                                <p className="text-sm font-semibold text-slate-900">Task Assignments</p>
+                                <p className="text-xs text-slate-500 mt-0.5">Receive an email when the AI assigns you a new task.</p>
+                            </div>
+                            <button
+                                onClick={() => setEmailNotifyTasks(!emailNotifyTasks)}
+                                className={`w-11 h-6 rounded-full transition-colors relative ${emailNotifyTasks ? 'bg-[var(--color-accent)]' : 'bg-slate-300'}`}
+                            >
+                                <span className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${emailNotifyTasks ? 'translate-x-5' : 'translate-x-0'}`} />
+                            </button>
+                        </div>
+
+                        <div className="flex items-center justify-between p-4 border border-slate-200 rounded-xl">
+                            <div>
+                                <p className="text-sm font-semibold text-slate-900">Dependency Risks</p>
+                                <p className="text-xs text-slate-500 mt-0.5">Notify me if I become a bottleneck in a project timeline.</p>
+                            </div>
+                            <button
+                                onClick={() => setEmailNotifyRisks(!emailNotifyRisks)}
+                                className={`w-11 h-6 rounded-full transition-colors relative ${emailNotifyRisks ? 'bg-[var(--color-accent)]' : 'bg-slate-300'}`}
+                            >
+                                <span className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${emailNotifyRisks ? 'translate-x-5' : 'translate-x-0'}`} />
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="border-t border-slate-100 pt-6 space-y-4">
+                        <h3 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+                            <Moon size={16} className="text-slate-400" /> Appearance
+                        </h3>
+                        <div className="space-y-1.5 max-w-xs">
+                            <label className="text-xs font-semibold text-slate-600">Theme Preference</label>
+                            <select
+                                value={theme}
+                                onChange={(e) => setTheme(e.target.value)}
+                                className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]/20 focus:border-[var(--color-accent)]"
+                            >
+                                <option value="light">Light Mode</option>
+                                <option value="dark">Dark Mode (Coming Soon)</option>
+                                <option value="system">System Default</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
             </motion.div>

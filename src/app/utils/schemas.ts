@@ -9,54 +9,34 @@ export const cvSchema = z.object({
 });
 
 export const projectDocumentSchema = z.object({
-  summary: z.string().describe("2-3 sentence executive summary of the project"),
+  summary: z.string().describe("2-3 sentence executive summary"),
   project_type: z.enum(["software", "construction", "marketing", "consulting", "research", "other"]).catch("other"),
   budget_estimate: z.number().optional().describe("Estimated budget if mentioned"),
-  currency: z.string().optional().describe("Currency like USD"),
+  currency: z.string().optional().describe("Currency code e.g. USD"),
   timeline_weeks: z.number().optional().describe("Estimated duration in weeks"),
-  start_date: z.string().optional().describe("YYYY-MM-DD format if mentioned"),
-  end_date: z.string().optional().describe("YYYY-MM-DD format if mentioned"),
+  start_date: z.string().optional().describe("YYYY-MM-DD if mentioned"),
+  end_date: z.string().optional().describe("YYYY-MM-DD if mentioned"),
   client_info: z.object({
     name: z.string().optional(),
     contact_person: z.string().optional(),
     email: z.string().optional(),
-    phone: z.string().optional(),
-    stakeholders: z.array(z.string()).optional(),
   }).optional(),
-  requirements: z.array(z.string()).optional(),
-  tasks: z.array(z.object({
-    title: z.string(),
-    description: z.string(),
-    estimated_hours: z.number().optional(),
-    required_skills: z.array(z.string()).optional(),
-    priority: z.enum(["high", "medium", "low"]).catch("medium"),
-    dependencies: z.array(z.string()).optional(),
-    acceptance_criteria: z.array(z.string()).optional(),
-  })).optional(),
+  requirements: z.array(z.string()).max(6).optional().describe("Top 6 key requirements"),
+  // tasks intentionally omitted — generated on-demand by AI Populate sprint feature
   milestones: z.array(z.object({
     title: z.string(),
     week: z.number(),
     deliverable: z.string(),
-    success_criteria: z.string().optional(),
-  })).optional(),
+  })).max(5).optional().describe("Up to 5 key milestones"),
   risks: z.array(z.object({
     description: z.string(),
     severity: z.enum(["high", "medium", "low"]).catch("medium"),
     mitigation: z.string(),
-  })).optional(),
-  required_skills: z.array(z.string()).optional(),
-  success_criteria: z.object({
-    kpis: z.array(z.string()).optional(),
-    acceptance_criteria: z.array(z.string()).optional(),
-    quality_metrics: z.array(z.string()).optional(),
-  }).optional(),
-  constraints: z.object({
-    technical: z.array(z.string()).optional(),
-    business: z.array(z.string()).optional(),
-    regulatory: z.array(z.string()).optional(),
-  }).optional(),
-  assumptions: z.array(z.string()).optional(),
-  custom_fields: z.record(z.string(), z.any()).optional(),
+  })).max(4).optional().describe("Top 4 risks"),
+  required_skills: z.array(z.string()).max(8).optional(),
+  success_criteria: z.array(z.string()).max(4).optional().describe("Key success criteria as flat strings"),
+  constraints: z.array(z.string()).max(4).optional().describe("Key constraints as flat strings"),
+  assumptions: z.array(z.string()).max(4).optional(),
 });
 
 export const taskAssignmentSchema = z.object({
@@ -75,5 +55,6 @@ export const smartAllocationSchema = z.object({
     week_number: z.number(),
     worker_id: z.string().describe("UUID from team list"),
     reasoning: z.string().describe("Explain the assignment. If a pattern influenced this decision, cite it explicitly."),
+    dependency_risk_warning: z.string().optional().describe("If this assignment poses a risk due to dependencies or overloaded worker capacity, explain it here briefly. Otherwise leave empty."),
   })),
 });

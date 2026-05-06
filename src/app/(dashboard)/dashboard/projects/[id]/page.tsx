@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "../../../../utils/supabase/client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -16,6 +16,7 @@ import {
   Target,
   Users,
   RefreshCw,
+  ListChecks,
 } from "lucide-react";
 import DynamicFieldRenderer from "../../../../components/DynamicFieldRenderer";
 import { getProjectTemplate } from "../../../../utils/projectTemplates";
@@ -25,7 +26,9 @@ export default function ProjectDetailsPage() {
   const { id } = useParams();
   const [project, setProject] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const supabase = createClient();
+  const [isAdmin, setIsAdmin] = useState(false);
+  // Stable client reference — recreating on every render broke real-time
+  const supabase = useMemo(() => createClient(), []);
 
   const handleMilestoneUpdate = async (milestoneId: string, updates: any) => {
     try {
@@ -58,20 +61,39 @@ export default function ProjectDetailsPage() {
 
   useEffect(() => {
     const fetchProject = async () => {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("projects")
         .select("*")
         .eq("id", id)
         .single();
 
-      if (data) setProject(data);
+      if (data) {
+        setProject(data);
+
+        // Check RBAC
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: ws } = await supabase.from("workspaces").select("owner_id").eq("id", data.workspace_id).single();
+          const isOwner = ws?.owner_id === user.id;
+
+          const { data: member } = await supabase.from("team_members")
+            .select("job_title")
+            .eq("workspace_id", data.workspace_id)
+            .eq("user_id", user.id)
+            .single();
+
+          const isPM = member?.job_title?.includes("Project Manager") || member?.job_title?.includes("PM");
+          setIsAdmin(isOwner || !!isPM);
+        }
+      }
       setLoading(false);
     };
 
     fetchProject();
 
+    // Real-time subscription — unique channel name per project prevents conflicts
     const channel = supabase
-      .channel("project-updates")
+      .channel(`project-updates-${id}`)
       .on(
         "postgres_changes",
         {
@@ -97,10 +119,30 @@ export default function ProjectDetailsPage() {
       console.log("Triggering AI Analysis...");
       fetch("/api/process-document", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId: id }),
       }).catch((err) => console.error("Trigger Error", err));
     }
   }, [project?.ai_status, id]);
+
+  // Polling fallback — every 4 s while parsing, in case real-time misses the update
+  useEffect(() => {
+    if (project?.ai_status !== "parsing" && project?.ai_status !== "idle") return;
+
+    const poll = setInterval(async () => {
+      const { data } = await supabase
+        .from("projects")
+        .select("*")
+        .eq("id", id)
+        .single();
+      if (data && data.ai_status !== "parsing" && data.ai_status !== "idle") {
+        setProject(data);
+        clearInterval(poll);
+      }
+    }, 4000);
+
+    return () => clearInterval(poll);
+  }, [project?.ai_status, id, supabase]);
 
   if (loading)
     return (
@@ -184,12 +226,36 @@ export default function ProjectDetailsPage() {
           </div>
 
           <div className="flex items-center gap-3">
-            <Link
+          {isAdmin && (
+            <button
+              onClick={() => {
+                setProject({ ...project, ai_status: "parsing" });
+              }}
+              className="p-2.5 bg-white border border-slate-200 text-slate-400 hover:text-indigo-600 hover:border-indigo-100 rounded-xl transition-all shadow-sm"
+              title="Refresh AI Analysis"
+            >
+              <RefreshCw size={18} className={project.ai_status === "parsing" ? "animate-spin" : ""} />
+            </button>
+          )}
+          <Link
+            href={`/dashboard/projects/${id}/sprints`}
+            className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold text-sm hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
+          >
+            <ListChecks size={18} /> Sprints
+          </Link>
+          <Link
               href={`/dashboard/projects/${id}/roadmap`}
               className="px-4 py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-medium rounded-lg transition-colors flex items-center shadow-sm"
             >
               <Calendar size={18} className="mr-2" />
               Live Roadmap
+            </Link>
+            <Link
+              href={`/dashboard/projects/${id}/analytics`}
+              className="px-4 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-medium rounded-lg transition-colors flex items-center shadow-sm"
+            >
+              <DollarSign size={18} className="mr-2" />
+              Financials
             </Link>
             <Link
               href={`/dashboard/projects/${id}/allocation`}

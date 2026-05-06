@@ -29,6 +29,18 @@ export async function runSmartAllocation(projectId: string) {
     return { error: "No team members found. Please go to the Team page and add members before running allocation." };
   }
 
+  // Fetch current global workload (all assignments across workspace)
+  const { data: globalAssignments } = await supabase
+    .from("project_assignments")
+    .select("resource_id, id");
+    
+  const workloadMap: Record<string, number> = {};
+  globalAssignments?.forEach(a => {
+      if (a.resource_id) {
+          workloadMap[a.resource_id] = (workloadMap[a.resource_id] || 0) + 1;
+      }
+  });
+
   // Fetch all unresolved patterns for this workspace
   const { data: patterns } = await supabase
     .from("worker_patterns")
@@ -78,6 +90,7 @@ export async function runSmartAllocation(projectId: string) {
       role: m.job_title || "Team Member",
       skills: m.skills || [],
       capacity_hours_per_week: m.capacity_hours_per_week || 40,
+      current_assigned_tasks: workloadMap[m.id] || 0,
       status: m.status,
       performance_score: m.performance_score ?? 100,
     }))
@@ -106,6 +119,7 @@ ASSIGNMENT RULES:
 6. For CAUTION patterns, you may still assign but MUST mention the pattern in the reasoning
 7. Prefer members with higher performance_score when skill match is equal
 8. Do NOT co-assign two members with a BLOCKER group_conflict to the same project milestones
+9. RISK ASSESSMENT: Consider the 'current_assigned_tasks' vs 'capacity_hours_per_week'. If you assign a task to someone who already has many tasks, output a 'dependency_risk_warning' explaining they might be a bottleneck.
 
 PROJECT: "{projectName}"
 
@@ -143,7 +157,7 @@ PATTERN MEMORY:
       resource_id: a.worker_id,
       task_name: a.task_name,
       week_number: a.week_number,
-      match_reason: a.reasoning,
+      match_reason: a.reasoning + (a.dependency_risk_warning ? `\n⚠️ Risk: ${a.dependency_risk_warning}` : ""),
     }));
 
     const { error: insertError } = await supabase.from("project_assignments").insert(inserts);

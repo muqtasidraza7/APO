@@ -3,13 +3,14 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { createClient } from "../../../utils/supabase/client";
-import { Users, UserPlus, Filter, RefreshCw, CheckCircle2, Link as LinkIcon, ShieldAlert, X, Loader2 } from "lucide-react";
+import { Users, UserPlus, Filter, RefreshCw, CheckCircle2, Link as LinkIcon, ShieldAlert, X, Loader2, AlertTriangle } from "lucide-react";
 import TeamMemberCard from "../../../components/TeamMemberCard";
 import CapacityGauge from "../../../components/CapacityGauge";
 import AddMemberModal from "../../../components/AddMemberModal";
 import AIAssignPanel from "../../../components/AIAssignPanel";
 import AssignTaskModal from "../../../components/AssignTaskModal";
 import AssignmentExplainer from "../../../components/AssignmentExplainer";
+import { removeTeamMember } from "./actions";
 
 interface TeamMember {
   id: string;
@@ -47,6 +48,7 @@ export default function TeamDashboardPage() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [showAddModal, setShowAddModal] = useState(false);
   const [assigningMember, setAssigningMember] = useState<TeamMember | null>(null);
@@ -60,6 +62,12 @@ export default function TeamDashboardPage() {
   const [recordingConflict, setRecordingConflict] = useState(false);
   const [conflictError, setConflictError] = useState("");
 
+  // Remove member state
+  const [removingMember, setRemovingMember] = useState<TeamMember | null>(null);
+  const [removeConfirmText, setRemoveConfirmText] = useState("");
+  const [removeError, setRemoveError] = useState("");
+  const [isRemoving, setIsRemoving] = useState(false);
+
   useEffect(() => {
     const resolveWorkspace = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -69,7 +77,22 @@ export default function TeamDashboardPage() {
         .select("workspace_id")
         .eq("user_id", user.id)
         .single();
-      if (data) setWorkspaceId(data.workspace_id);
+      if (data) {
+        setWorkspaceId(data.workspace_id);
+        
+        // Check RBAC
+        const { data: ws } = await supabase.from("workspaces").select("owner_id").eq("id", data.workspace_id).single();
+        const isOwner = ws?.owner_id === user.id;
+        
+        const { data: member } = await supabase.from("team_members")
+          .select("job_title")
+          .eq("workspace_id", data.workspace_id)
+          .eq("user_id", user.id)
+          .single();
+        
+        const isPM = member?.job_title?.includes("Project Manager") || member?.job_title?.includes("PM");
+        setIsAdmin(isOwner || !!isPM);
+      }
     };
     resolveWorkspace();
   }, []);
@@ -273,6 +296,23 @@ export default function TeamDashboardPage() {
     }
   };
 
+  const handleRemoveMember = async () => {
+    if (!removingMember || !workspaceId) return;
+    if (removeConfirmText !== removingMember.full_name) return;
+    setIsRemoving(true);
+    setRemoveError("");
+    const result = await removeTeamMember(removingMember.id, workspaceId);
+    if (result?.error) {
+      setRemoveError(result.error);
+    } else {
+      setRemovingMember(null);
+      setRemoveConfirmText("");
+      fetchTeamMembers();
+      showToast(`${removingMember.full_name} removed`, "Team roster updated");
+    }
+    setIsRemoving(false);
+  };
+
   if (loading && !workspaceId) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -307,7 +347,7 @@ export default function TeamDashboardPage() {
             <RefreshCw size={16} />
             Refresh
           </button>
-          {/* 6.3: Record Group Conflict button */}
+          
           {teamMembers.length >= 2 && (
             <button
               onClick={() => setShowConflictModal(true)}
@@ -317,26 +357,31 @@ export default function TeamDashboardPage() {
               Record Conflict
             </button>
           )}
-          <button
-            onClick={() => {
-              if (workspaceId && typeof window !== "undefined") {
-                const inviteLink = `${window.location.origin}/onboarding?invite=${workspaceId}`;
-                navigator.clipboard.writeText(inviteLink);
-                showToast("Invite link copied to clipboard", "Share with your team");
-              }
-            }}
-            className="px-4 py-2 bg-indigo-50 border border-indigo-100 rounded-lg text-sm font-medium text-indigo-700 hover:bg-indigo-100 transition-colors flex items-center gap-2"
-          >
-            <LinkIcon size={16} />
-            Copy Invite Link
-          </button>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="btn btn-primary flex items-center gap-2"
-          >
-            <UserPlus size={18} />
-            Add Member
-          </button>
+
+          {isAdmin && (
+            <>
+              <button
+                onClick={() => {
+                  if (workspaceId && typeof window !== "undefined") {
+                    const inviteLink = `${window.location.origin}/onboarding?invite=${workspaceId}`;
+                    navigator.clipboard.writeText(inviteLink);
+                    alert("Invite link copied to clipboard");
+                  }
+                }}
+                className="px-4 py-2 bg-indigo-50 border border-indigo-100 rounded-lg text-sm font-medium text-indigo-700 hover:bg-indigo-100 transition-colors flex items-center gap-2"
+              >
+                <LinkIcon size={16} />
+                Copy Invite Link
+              </button>
+              <button
+                onClick={() => setShowAddModal(true)}
+                className="btn btn-primary flex items-center gap-2"
+              >
+                <UserPlus size={18} />
+                Add Member
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -411,6 +456,11 @@ export default function TeamDashboardPage() {
                   onAssignTask={() => setAssigningMember(member)}
                   onMessage={() => { }}
                   onViewDetails={() => { }}
+                  onRemove={(m) => {
+                    setRemovingMember(m);
+                    setRemoveConfirmText("");
+                    setRemoveError("");
+                  }}
                 />
               ))}
             </div>
@@ -526,6 +576,70 @@ export default function TeamDashboardPage() {
               >
                 {recordingConflict && <Loader2 size={16} className="animate-spin" />}
                 Confirm Conflict
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Remove Member Modal */}
+      {removingMember && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            {/* Header */}
+            <div className="bg-red-50 border-b border-red-100 px-6 py-5 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center">
+                  <AlertTriangle size={20} className="text-red-600" />
+                </div>
+                <div>
+                  <h2 className="font-bold text-slate-900">Remove Team Member</h2>
+                  <p className="text-xs text-slate-500">This action cannot be undone</p>
+                </div>
+              </div>
+              <button onClick={() => setRemovingMember(null)} className="p-2 hover:bg-red-100 rounded-xl transition-colors">
+                <X size={18} className="text-slate-400" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 space-y-5">
+              <p className="text-sm text-slate-600 leading-relaxed">
+                You are about to remove <span className="font-bold text-slate-900">{removingMember.full_name}</span> from this workspace.
+                All their task assignments will become unassigned.
+              </p>
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-700">
+                  Type <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-red-600">{removingMember.full_name}</span> to confirm:
+                </label>
+                <input
+                  type="text"
+                  value={removeConfirmText}
+                  onChange={(e) => setRemoveConfirmText(e.target.value)}
+                  placeholder={removingMember.full_name}
+                  autoFocus
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400 font-mono"
+                />
+              </div>
+              {removeError && (
+                <p className="text-sm text-red-600 bg-red-50 border border-red-200 px-4 py-2.5 rounded-xl">{removeError}</p>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 pb-6 flex gap-3">
+              <button
+                onClick={() => setRemovingMember(null)}
+                className="flex-1 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRemoveMember}
+                disabled={removeConfirmText !== removingMember.full_name || isRemoving}
+                className="flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-red-200 disabled:cursor-not-allowed text-white rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+              >
+                {isRemoving ? <><Loader2 size={15} className="animate-spin" /> Removing…</> : "Remove Member"}
               </button>
             </div>
           </div>

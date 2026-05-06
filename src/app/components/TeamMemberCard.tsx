@@ -67,6 +67,7 @@ interface TeamMemberCardProps {
     onAssignTask?: (memberId: string) => void;
     onMessage?: (memberId: string) => void;
     onViewDetails?: (memberId: string) => void;
+    onRemove?: (member: TeamMember) => void;
 }
 
 export default function TeamMemberCard({
@@ -74,6 +75,7 @@ export default function TeamMemberCard({
     onAssignTask,
     onMessage,
     onViewDetails,
+    onRemove,
 }: TeamMemberCardProps) {
     const [showPatterns, setShowPatterns] = useState(false);
     // 6.2: track patterns resolved in this session
@@ -402,6 +404,13 @@ export default function TeamMemberCard({
                     title="View Details"
                 >
                     <TrendingUp size={16} />
+                </button>
+                <button
+                    onClick={() => onRemove?.(member)}
+                    className="px-3 py-2 bg-red-50 hover:bg-red-100 border border-red-200 text-red-500 rounded-lg text-sm font-medium transition-colors"
+                    title="Remove Member"
+                >
+                    <Trash2 size={16} />
                 </button>
             </div>
         </div>

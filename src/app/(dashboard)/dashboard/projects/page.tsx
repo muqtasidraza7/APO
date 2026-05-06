@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import DeleteProjectButton from "../../../components/DeleteProjectButton";
 
 export default async function ProjectsListPage() {
   const supabase = await createClient();
@@ -36,6 +37,12 @@ export default async function ProjectsListPage() {
     .eq("workspace_id", membership.workspace_id)
     .order("created_at", { ascending: false });
 
+  // RBAC: Check if user is Admin (Owner or PM)
+  const { data: ws } = await supabase.from("workspaces").select("owner_id").eq("id", membership.workspace_id).single();
+  const { data: member } = await supabase.from("team_members").select("job_title").eq("workspace_id", membership.workspace_id).eq("user_id", user.id).single();
+  
+  const isAdmin = (ws?.owner_id === user.id) || member?.job_title?.includes("Project Manager") || member?.job_title?.includes("PM");
+
   return (
     <div className="max-w-7xl mx-auto space-y-8">
       
@@ -47,22 +54,25 @@ export default async function ProjectsListPage() {
           </p>
         </div>
 
-        <Link
-          href="/dashboard/projects/new"
-          className="btn btn-primary flex items-center gap-2 shadow-lg shadow-indigo-100"
-        >
-          <Plus size={18} />
-          New Project
-        </Link>
+        {isAdmin && (
+          <Link
+            href="/dashboard/projects/new"
+            className="btn btn-primary flex items-center gap-2 shadow-lg shadow-indigo-100"
+          >
+            <Plus size={18} />
+            New Project
+          </Link>
+        )}
       </div>
 
       {projects && projects.length > 0 ? (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
           {projects.map((project) => (
-            <Link
-              key={project.id}
-              href={`/dashboard/projects/${project.id}`}
-              className="group bg-white border border-slate-200 rounded-2xl p-6 hover:shadow-lg hover:-translate-y-1 transition-all duration-300 relative overflow-hidden"
+            <div key={project.id} className="relative group">
+              {isAdmin && <DeleteProjectButton projectId={project.id} projectName={project.name} />}
+              <Link
+                href={`/dashboard/projects/${project.id}`}
+                className="block bg-white border border-slate-200 rounded-2xl p-6 hover:shadow-lg hover:-translate-y-1 transition-all duration-300 relative overflow-hidden"
             >
               
               <div className="absolute top-6 right-6">
@@ -106,7 +116,8 @@ export default async function ProjectsListPage() {
                   </span>
                 </div>
               </div>
-            </Link>
+              </Link>
+            </div>
           ))}
         </div>
       ) : (
