@@ -34,6 +34,7 @@ function OnboardingForm() {
 
   const [step, setStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
+  const [finishError, setFinishError] = useState("");
   const [workspaceMode, setWorkspaceMode] = useState<"create" | "join">(inviteCode ? "join" : "create");
   const [workspaceName, setWorkspaceName] = useState("");
   const [joinWorkspaceId, setJoinWorkspaceId] = useState(inviteCode || "");
@@ -65,6 +66,11 @@ function OnboardingForm() {
   };
 
   const handleFileSelect = (file: File) => {
+    // 2.3 Fix: validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      setParseError("File is too large. Maximum size is 10MB.");
+      return;
+    }
     if (!file.name.toLowerCase().endsWith(".pdf")) {
       setParseError("Please upload a PDF file.");
       return;
@@ -124,6 +130,7 @@ function OnboardingForm() {
 
   const handleFinish = async (skipCv = false) => {
     setIsLoading(true);
+    setFinishError("");
 
     const profile = skipCv || !skillProfile
       ? undefined
@@ -137,13 +144,13 @@ function OnboardingForm() {
     if (workspaceMode === "create") {
       const result = await createWorkspace(workspaceName, profile);
       if (result?.error) {
-        alert(result.error);
+        setFinishError(result.error);
         setIsLoading(false);
       }
     } else {
       const result = await joinWorkspace(joinWorkspaceId, profile);
       if (result?.error) {
-        alert(result.error);
+        setFinishError(result.error);
         setIsLoading(false);
       }
     }
@@ -296,6 +303,12 @@ function OnboardingForm() {
                       </div>
                     </div>
                   </>
+                )}
+
+                {finishError && (
+                  <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl">
+                    {finishError}
+                  </div>
                 )}
 
                 <button

@@ -1,8 +1,8 @@
-
-
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "../../utils/supabase/server";
-import Groq from "groq-sdk";
+import { getGroqModel } from "../../utils/ai";
+import { taskAssignmentsArraySchema } from "../../utils/schemas";
+import { PromptTemplate } from "@langchain/core/prompts";
 
 export const runtime = "nodejs";
 
@@ -84,8 +84,6 @@ export async function POST(request: NextRequest) {
                 date: new Date(p.created_at).toLocaleDateString("en-GB"),
             }));
 
-        const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-
         const milestonesJson = JSON.stringify(
             milestones.map((m: any) => ({ title: m.title, week: m.week, deliverable: m.deliverable }))
         );
@@ -109,7 +107,11 @@ ${JSON.stringify(taskPatterns, null, 2)}
 GROUP CONFLICTS (do not co-assign these pairs to the same project):
 ${JSON.stringify(groupPatterns, null, 2)}`;
 
-        const prompt = `
+        // Initialize LangChain components
+        const model = getGroqModel(0.2);
+        const structuredModel = model.withStructuredOutput(taskAssignmentsArraySchema);
+
+        const promptTemplate = PromptTemplate.fromTemplate(`
 You are an expert Project Manager AI. Assign the following PROJECT MILESTONES to the most suitable TEAM MEMBERS.
 
 RULES:
@@ -121,49 +123,28 @@ RULES:
 6. For CAUTION patterns, you may still assign but MUST mention the pattern in the reasoning
 7. Prefer members with higher performance_score when skill match is equal
 8. Do NOT co-assign two members with a BLOCKER group_conflict to the same project milestones
-9. Return ONLY a JSON array, no extra text
 
-PROJECT: "${project.name}"
+PROJECT: "{projectName}"
 
 MILESTONES:
-${milestonesJson}
+{milestones}
 
 TEAM MEMBERS (with performance scores):
-${teamJson}
+{teamMembers}
 
 PATTERN MEMORY:
-${patternsSection}
+{patterns}
+`);
 
-Return this JSON structure:
-[
-  {
-    "task_title": "Exact milestone title from list",
-    "assigned_to": "team-member-uuid",
-    "assigned_to_name": "Job title of the assigned person",
-    "reasoning": "Explain the assignment. If a pattern influenced this decision, cite it explicitly with the date and reason.",
-    "pattern_warning": null or "Brief warning text if a caution pattern applies"
-  }
-]
-`;
-
-        const completion = await groq.chat.completions.create({
-            messages: [{ role: "user", content: prompt }],
-            model: "llama-3.3-70b-versatile",
-            temperature: 0.2,
-            response_format: { type: "json_object" },
+        const prompt = await promptTemplate.invoke({
+            projectName: project.name,
+            milestones: milestonesJson,
+            teamMembers: teamJson,
+            patterns: patternsSection
         });
 
-        const rawText = completion.choices[0].message.content || "{}";
-        let assignments: any[] = [];
-
-        try {
-            const parsed = JSON.parse(rawText);
-            assignments = Array.isArray(parsed)
-                ? parsed
-                : (parsed.assignments || parsed.results || parsed.data || []);
-        } catch {
-            return NextResponse.json({ error: "AI returned invalid JSON. Please try again." }, { status: 500 });
-        }
+        // Generate assignments
+        const assignments = await structuredModel.invoke(prompt);
 
         const validIds = new Set(teamMembers.map(m => m.id));
         const valid = assignments.filter((a: any) => validIds.has(a.assigned_to));

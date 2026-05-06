@@ -10,6 +10,7 @@ interface SkillProfile {
   experience_level?: string;
   years_of_experience?: number;
   cv_url?: string;
+  capacity_hours_per_week?: number;
 }
 
 export async function createWorkspace(workspaceName: string, skillProfile?: SkillProfile) {
@@ -47,6 +48,7 @@ export async function createWorkspace(workspaceName: string, skillProfile?: Skil
     if (skillProfile.experience_level) memberData.experience_level = skillProfile.experience_level;
     if (skillProfile.years_of_experience) memberData.years_of_experience = skillProfile.years_of_experience;
     if (skillProfile.cv_url) memberData.user_cv_url = skillProfile.cv_url;
+    if (skillProfile.capacity_hours_per_week) memberData.capacity_hours_per_week = skillProfile.capacity_hours_per_week;
   }
 
   const { error: memberError } = await supabase
@@ -56,6 +58,27 @@ export async function createWorkspace(workspaceName: string, skillProfile?: Skil
   if (memberError) {
     console.error("Member Error:", memberError.message);
     return { error: "Failed to join workspace" };
+  }
+
+  // 1.5 Fix: Also add to team_members table for SCRUM/Messaging
+  const teamMemberData = {
+    workspace_id: workspace.id,
+    user_id: user.id,
+    full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || "Admin",
+    email: user.email,
+    job_title: skillProfile?.job_title || "Project Manager",
+    capacity_hours_per_week: skillProfile?.capacity_hours_per_week || 40,
+    status: "online",
+    skills: skillProfile?.skills || []
+  };
+
+  const { error: teamError } = await supabase
+    .from("team_members")
+    .insert(teamMemberData);
+
+  if (teamError) {
+    console.error("Team Member Error:", teamError.message);
+    // Not a fatal error for onboarding, but good to log
   }
 
   redirect("/dashboard");
@@ -126,6 +149,7 @@ export async function joinWorkspace(workspaceId: string, skillProfile?: SkillPro
     if (skillProfile.experience_level) memberData.experience_level = skillProfile.experience_level;
     if (skillProfile.years_of_experience) memberData.years_of_experience = skillProfile.years_of_experience;
     if (skillProfile.cv_url) memberData.user_cv_url = skillProfile.cv_url;
+    if (skillProfile.capacity_hours_per_week) memberData.capacity_hours_per_week = skillProfile.capacity_hours_per_week;
   }
 
   const { error: memberError } = await supabase
@@ -136,6 +160,22 @@ export async function joinWorkspace(workspaceId: string, skillProfile?: SkillPro
     console.error("Join Error:", memberError.message);
     return { error: "Failed to join workspace" };
   }
+
+  // Also add to team_members table for SCRUM/Messaging
+  const teamMemberData = {
+    workspace_id: workspace.id,
+    user_id: user.id,
+    full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || "Member",
+    email: user.email,
+    job_title: skillProfile?.job_title || "Team Member",
+    capacity_hours_per_week: skillProfile?.capacity_hours_per_week || 40,
+    status: "online",
+    skills: skillProfile?.skills || []
+  };
+
+  await supabase
+    .from("team_members")
+    .insert(teamMemberData);
 
   redirect("/dashboard");
 }
@@ -153,6 +193,7 @@ export async function updateSkillProfile(skillProfile: SkillProfile) {
   if (skillProfile.experience_level !== undefined) updateData.experience_level = skillProfile.experience_level;
   if (skillProfile.years_of_experience !== undefined) updateData.years_of_experience = skillProfile.years_of_experience;
   if (skillProfile.cv_url !== undefined) updateData.user_cv_url = skillProfile.cv_url;
+  if (skillProfile.capacity_hours_per_week !== undefined) updateData.capacity_hours_per_week = skillProfile.capacity_hours_per_week;
 
   const { error } = await supabase
     .from("workspace_members")

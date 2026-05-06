@@ -59,3 +59,23 @@ export async function createProject(formData: FormData) {
 
   redirect(`/dashboard/projects/${project.id}`);
 }
+
+export async function deleteProject(projectId: string) {
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "You must be logged in" };
+
+  const { error } = await supabase
+    .from("projects")
+    .delete()
+    .eq("id", projectId)
+    .eq("owner_id", user.id); // Only owner can delete
+
+  if (error) {
+    console.error("Error deleting project:", error);
+    return { error: `Failed to delete project: ${error.message}` };
+  }
+
+  return { success: true };
+}

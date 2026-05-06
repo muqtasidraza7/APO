@@ -11,6 +11,7 @@ import {
     AlertCircle,
     Calendar,
     TrendingUp,
+    Loader2,
 } from 'lucide-react';
 
 interface Milestone {
@@ -46,6 +47,7 @@ export default function MilestoneList({
             completion_percentage: m.completion_percentage || 0,
         }))
     );
+    const [loadingId, setLoadingId] = useState<string | null>(null);
 
     const getStatusIcon = (status: string) => {
         switch (status) {
@@ -84,8 +86,12 @@ export default function MilestoneList({
     };
 
     const handleStatusChange = async (milestoneId: string, newStatus: string) => {
+        if (loadingId) return;
+        
         const milestone = localMilestones.find(m => m.id === milestoneId);
         if (!milestone) return;
+
+        setLoadingId(milestoneId);
 
         const updates: Partial<Milestone> = {
             status: newStatus as any,
@@ -106,8 +112,11 @@ export default function MilestoneList({
                 setLocalMilestones(prev =>
                     prev.map(m => m.id === milestoneId ? milestone : m)
                 );
+                alert("Failed to update milestone. Please try again.");
             }
         }
+        
+        setLoadingId(null);
     };
 
     const toggleComplete = (milestoneId: string) => {
@@ -175,10 +184,13 @@ export default function MilestoneList({
                             {editable && (
                                 <button
                                     onClick={() => toggleComplete(milestone.id!)}
-                                    className="mt-1 flex-shrink-0 focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded-lg"
+                                    disabled={loadingId === milestone.id}
+                                    className="mt-1 flex-shrink-0 focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded-lg disabled:opacity-50"
                                     aria-label={`Mark milestone ${index + 1} as ${milestone.status === 'completed' ? 'incomplete' : 'complete'}`}
                                 >
-                                    {milestone.status === 'completed' ? (
+                                    {loadingId === milestone.id ? (
+                                        <Loader2 size={24} className="text-indigo-500 animate-spin" />
+                                    ) : milestone.status === 'completed' ? (
                                         <CheckCircle2 size={24} className="text-green-600 hover:text-green-700 transition-colors" />
                                     ) : (
                                         <Circle size={24} className="text-slate-400 hover:text-indigo-500 transition-colors" />

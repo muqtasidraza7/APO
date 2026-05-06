@@ -26,3 +26,37 @@ export async function generateDummyTeam(workspaceId: string) {
   if (error) console.error("Error generating team:", error);
   revalidatePath("/dashboard/team");
 }
+
+export async function removeTeamMember(memberId: string, workspaceId: string) {
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated" };
+
+  // Verify the caller is a PM/admin in this workspace
+  const { data: caller } = await supabase
+    .from("workspace_members")
+    .select("role")
+    .eq("user_id", user.id)
+    .eq("workspace_id", workspaceId)
+    .single();
+
+  if (!caller || caller.role !== "PM") {
+    return { error: "Only workspace admins can remove members" };
+  }
+
+  // Delete from team_resources (the team_members view source)
+  const { error } = await supabase
+    .from("team_resources")
+    .delete()
+    .eq("id", memberId)
+    .eq("workspace_id", workspaceId);
+
+  if (error) {
+    console.error("Error removing team member:", error);
+    return { error: `Failed to remove member: ${error.message}` };
+  }
+
+  revalidatePath("/dashboard/team");
+  return { success: true };
+}

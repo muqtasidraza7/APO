@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import React, { useState } from 'react';
@@ -15,6 +14,8 @@ import {
     ShieldAlert,
     Star,
     X,
+    CheckCheck,
+    Loader2,
 } from 'lucide-react';
 
 interface Task {
@@ -66,6 +67,7 @@ interface TeamMemberCardProps {
     onAssignTask?: (memberId: string) => void;
     onMessage?: (memberId: string) => void;
     onViewDetails?: (memberId: string) => void;
+    onRemove?: (member: TeamMember) => void;
 }
 
 export default function TeamMemberCard({
@@ -73,8 +75,12 @@ export default function TeamMemberCard({
     onAssignTask,
     onMessage,
     onViewDetails,
+    onRemove,
 }: TeamMemberCardProps) {
     const [showPatterns, setShowPatterns] = useState(false);
+    // 6.2: track patterns resolved in this session
+    const [resolvedIds, setResolvedIds] = useState<Set<string>>(new Set());
+    const [resolvingId, setResolvingId] = useState<string | null>(null);
 
     const getStatusColor = (status: string) => {
         switch (status) {
@@ -113,6 +119,23 @@ export default function TeamMemberCard({
         return 'text-blue-700 bg-blue-50 border-blue-200';
     };
 
+    // 6.2 Fix: resolve a pattern via PATCH /api/worker-patterns
+    const handleResolve = async (patternId: string) => {
+        setResolvingId(patternId);
+        try {
+            await fetch('/api/worker-patterns', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: patternId, resolved: true }),
+            });
+            setResolvedIds(prev => new Set([...prev, patternId]));
+        } catch {
+            // silently ignore — the pattern will disappear on next page load
+        } finally {
+            setResolvingId(null);
+        }
+    };
+
     const workload = member.workload || {
         total_tasks: 0,
         active_tasks: 0,
@@ -124,43 +147,75 @@ export default function TeamMemberCard({
 
     const utilizationStatus = getUtilizationStatus(workload.utilization_percentage);
     const performanceScore = member.performance_score ?? 100;
-    const hasPatterns = (member.patterns || []).length > 0;
-    const hasBlocker = (member.patterns || []).some(p => p.severity === 'blocker');
+    // Only count unresolved patterns (resolved in this session are hidden immediately)
+    const visiblePatterns = (member.patterns || []).filter(p => !resolvedIds.has(p.id));
+    const hasPatterns = visiblePatterns.length > 0;
+    const hasBlocker = visiblePatterns.some(p => p.severity === 'blocker');
 
     return (
-        <div className={`bg-white border rounded-2xl p-6 hover:shadow-lg transition-all duration-200 relative ${
+        // 8.5 Fix: add overflow-visible so the popup panel isn't clipped by the card
+        <div className={`bg-white border rounded-2xl p-6 hover:shadow-lg transition-all duration-200 relative overflow-visible ${
             hasBlocker ? 'border-red-200' : hasPatterns ? 'border-amber-200' : 'border-slate-200'
         }`}>
 
-            {/* Pattern warning panel */}
+            {/* Pattern warning panel
+                8.5 Fix: uses z-50 and a high stacking context. Position is absolute but
+                the parent card now has overflow-visible so it won't be clipped.       */}
             {showPatterns && hasPatterns && (
-                <div className="absolute inset-x-0 top-0 z-10 bg-white border border-amber-200 rounded-2xl shadow-xl p-4">
-                    <div className="flex items-center justify-between mb-3">
-                        <span className="font-bold text-sm text-slate-900 flex items-center gap-2">
-                            <ShieldAlert size={14} className="text-amber-500" />
-                            Recorded Patterns
-                        </span>
-                        <button onClick={() => setShowPatterns(false)} className="p-1 hover:bg-slate-100 rounded-lg">
-                            <X size={14} className="text-slate-400" />
-                        </button>
-                    </div>
-                    <div className="space-y-2 max-h-48 overflow-y-auto">
-                        {(member.patterns || []).map((p, i) => (
-                            <div key={i} className={`px-3 py-2 rounded-lg border text-xs ${getSeverityColor(p.severity)}`}>
-                                <div className="flex items-center gap-1.5 mb-0.5">
-                                    <span className="font-semibold uppercase tracking-wide">{p.severity}</span>
-                                    {p.pattern_type === 'task_incompatibility' && p.task_type && (
-                                        <span className="opacity-70">· {p.task_type}</span>
-                                    )}
-                                    {p.pattern_type === 'group_conflict' && (
-                                        <span className="opacity-70">· Group Conflict</span>
-                                    )}
+                <>
+                    {/* Click-outside backdrop */}
+                    <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setShowPatterns(false)}
+                    />
+                    <div className="absolute right-0 top-14 z-50 w-80 bg-white border border-amber-200 rounded-2xl shadow-2xl p-4">
+                        <div className="flex items-center justify-between mb-3">
+                            <span className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                                <ShieldAlert size={14} className="text-amber-500" />
+                                Recorded Patterns ({visiblePatterns.length})
+                            </span>
+                            <button onClick={() => setShowPatterns(false)} className="p-1 hover:bg-slate-100 rounded-lg">
+                                <X size={14} className="text-slate-400" />
+                            </button>
+                        </div>
+                        <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                            {visiblePatterns.map((p) => (
+                                <div key={p.id} className={`px-3 py-2.5 rounded-lg border text-xs ${getSeverityColor(p.severity)}`}>
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-1.5 mb-1">
+                                                <span className="font-semibold uppercase tracking-wide">{p.severity}</span>
+                                                {p.pattern_type === 'task_incompatibility' && p.task_type && (
+                                                    <span className="opacity-70 truncate">· {p.task_type}</span>
+                                                )}
+                                                {p.pattern_type === 'group_conflict' && (
+                                                    <span className="opacity-70">· Group Conflict</span>
+                                                )}
+                                            </div>
+                                            <p className="leading-relaxed">{p.reason}</p>
+                                        </div>
+                                        {/* 6.2 Fix: Resolve button */}
+                                        <button
+                                            onClick={() => handleResolve(p.id)}
+                                            disabled={resolvingId === p.id}
+                                            className="flex-shrink-0 flex items-center gap-1 px-2 py-1 bg-white/70 hover:bg-white border border-current rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                                            title="Mark as resolved"
+                                        >
+                                            {resolvingId === p.id
+                                                ? <Loader2 size={10} className="animate-spin" />
+                                                : <CheckCheck size={10} />
+                                            }
+                                            Resolve
+                                        </button>
+                                    </div>
                                 </div>
-                                <p>{p.reason}</p>
-                            </div>
-                        ))}
+                            ))}
+                        </div>
+                        <p className="text-xs text-slate-400 mt-3">
+                            Resolving a pattern removes it from AI assignment logic.
+                        </p>
                     </div>
-                </div>
+                </>
             )}
 
             <div className="flex items-start justify-between mb-4">
@@ -213,7 +268,7 @@ export default function TeamMemberCard({
                                 title="View recorded patterns"
                             >
                                 <ShieldAlert size={10} />
-                                {(member.patterns || []).length}
+                                {visiblePatterns.length}
                             </button>
                         )}
                     </div>
@@ -232,9 +287,7 @@ export default function TeamMemberCard({
                 </div>
                 <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
                     <div
-                        className={`h-full transition-all duration-500 ${getUtilizationColor(
-                            workload.utilization_percentage
-                        )}`}
+                        className={`h-full transition-all duration-500 ${getUtilizationColor(workload.utilization_percentage)}`}
                         style={{ width: `${Math.min(workload.utilization_percentage, 100)}%` }}
                     />
                 </div>
@@ -351,6 +404,13 @@ export default function TeamMemberCard({
                     title="View Details"
                 >
                     <TrendingUp size={16} />
+                </button>
+                <button
+                    onClick={() => onRemove?.(member)}
+                    className="px-3 py-2 bg-red-50 hover:bg-red-100 border border-red-200 text-red-500 rounded-lg text-sm font-medium transition-colors"
+                    title="Remove Member"
+                >
+                    <Trash2 size={16} />
                 </button>
             </div>
         </div>

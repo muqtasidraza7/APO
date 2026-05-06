@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "../../utils/supabase/server";
-import Groq from "groq-sdk";
+import { getGroqModel } from "../../utils/ai";
+import { PromptTemplate } from "@langchain/core/prompts";
+import { StringOutputParser } from "@langchain/core/output_parsers";
 
 export const runtime = "nodejs";
 
@@ -73,46 +75,52 @@ export async function POST(request: NextRequest) {
             performance_score: m.performance_score ?? 100,
         }));
 
-        const prompt = `
+        const model = getGroqModel(0.3);
+        const parser = new StringOutputParser();
+
+        const promptTemplate = PromptTemplate.fromTemplate(`
 You are an expert Project Manager AI with access to a team's full pattern memory — a history of incidents, incompatibilities, and behavioral observations about team members.
 
 A Project Manager is asking you the following question:
-"${question}"
+"{question}"
 
 Use the data below to give a detailed, helpful, and honest answer. Always reference specific patterns by date and reason when they are relevant. Speak directly and professionally.
 
 TEAM MEMBERS:
-${JSON.stringify(enrichedMembers, null, 2)}
+{members}
 
 RECORDED PATTERNS (Incompatibilities & Conflicts):
-${enrichedPatterns.length > 0
-    ? JSON.stringify(enrichedPatterns, null, 2)
-    : "No patterns recorded yet for this workspace."
-}
+{patterns}
 
 RECENT TASK ASSIGNMENTS (last 50):
-${JSON.stringify(
-    (recentActivity || []).map((a: any) => ({
-        worker: memberMap[a.team_member_id] || a.team_member_id,
-        task: a.metadata?.task_title || a.description,
-        project: a.metadata?.project_name || "Unknown",
-        status: a.metadata?.status || "active",
-        date: new Date(a.created_at).toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" }),
-    })),
-    null, 2
-)}
+{activity}
 
 Answer the project manager's question. If the question is about why someone was not assigned, explain using the patterns above. If there are no relevant patterns, say so honestly. Always be specific about dates and reasons.
-`;
+`);
 
-        const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-        const completion = await groq.chat.completions.create({
-            messages: [{ role: "user", content: prompt }],
-            model: "llama-3.3-70b-versatile",
-            temperature: 0.3,
+        const patternsStr = enrichedPatterns.length > 0
+            ? JSON.stringify(enrichedPatterns, null, 2)
+            : "No patterns recorded yet for this workspace.";
+
+        const activityStr = JSON.stringify(
+            (recentActivity || []).map((a: any) => ({
+                worker: memberMap[a.team_member_id] || a.team_member_id,
+                task: a.metadata?.task_title || a.description,
+                project: a.metadata?.project_name || "Unknown",
+                status: a.metadata?.status || "active",
+                date: new Date(a.created_at).toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" }),
+            })),
+            null, 2
+        );
+
+        const prompt = await promptTemplate.invoke({
+            question,
+            members: JSON.stringify(enrichedMembers, null, 2),
+            patterns: patternsStr,
+            activity: activityStr,
         });
 
-        const answer = completion.choices[0].message.content || "I couldn't generate a response. Please try again.";
+        const answer = await model.pipe(parser).invoke(prompt);
 
         return NextResponse.json({ success: true, answer });
     } catch (error: any) {

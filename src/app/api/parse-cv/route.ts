@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import Groq from "groq-sdk";
-
-const PDFParser = require("pdf2json");
+import { getGroqModel } from "../../utils/ai";
+import { cvSchema } from "../../utils/schemas";
+import { PromptTemplate } from "@langchain/core/prompts";
+import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf";
 
 export const runtime = "nodejs";
 
@@ -18,51 +19,37 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Only PDF files are supported" }, { status: 400 });
         }
 
-        const arrayBuffer = await file.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
+        // Load and parse PDF using LangChain's PDFLoader
+        const loader = new PDFLoader(file, { parsedItemSeparator: " " });
+        const docs = await loader.load();
+        const extractedText = docs.map((doc) => doc.pageContent).join("\n");
 
-        const extractedText = await parsePdfBuffer(buffer);
+        // Initialize ChatGroq and bind the structured output schema
+        const model = getGroqModel(0.1);
+        const structuredModel = model.withStructuredOutput(cvSchema);
 
-        if (!process.env.GROQ_API_KEY) {
-            throw new Error("Missing GROQ_API_KEY");
-        }
+        // Define the prompt using LangChain PromptTemplate
+        const promptTemplate = PromptTemplate.fromTemplate(`
+You are an expert HR AI analyzing a professional CV/Resume.
+Extract the candidate's professional profile based on the provided text.
 
-        const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+IMPORTANT:
+- Extract ALL skills mentioned (technical and soft skills)
+- Normalize skill names (e.g., "ReactJS" -> "React", "js" -> "JavaScript")
+- Be thorough — list every meaningful skill found
+- For experience_level use one of: "Junior", "Mid-Level", "Senior", "Lead", "Executive"
+- For years_of_experience use an integer estimate
 
-        const prompt = `
-      You are an expert HR AI analyzing a professional CV/Resume.
-      Extract the candidate's professional profile and return a JSON object with this EXACT structure.
-      Do not include any explanation, just the JSON.
+CV TEXT:
+{cvText}
+`);
 
-      IMPORTANT:
-      - Extract ALL skills mentioned (technical and soft skills)
-      - Normalize skill names (e.g., "ReactJS" -> "React", "js" -> "JavaScript")
-      - Be thorough — list every meaningful skill found
-      - For experience_level use one of: "Junior", "Mid-Level", "Senior", "Lead", "Executive"
-      - For years_of_experience use an integer estimate
-
-      Structure:
-      {
-        "skills": ["Skill 1", "Skill 2", "Skill 3"],
-        "job_title": "Most recent or primary job title from CV",
-        "experience_level": "Junior|Mid-Level|Senior|Lead|Executive",
-        "years_of_experience": 5,
-        "summary": "One sentence professional summary based on the CV"
-      }
-
-      CV TEXT:
-      ${extractedText.substring(0, 20000)}
-    `;
-
-        const chatCompletion = await groq.chat.completions.create({
-            messages: [{ role: "user", content: prompt }],
-            model: "llama-3.3-70b-versatile",
-            temperature: 0.1,
-            response_format: { type: "json_object" },
+        const prompt = await promptTemplate.invoke({
+            cvText: extractedText.substring(0, 20000),
         });
 
-        const aiResponseContent = chatCompletion.choices[0]?.message?.content || "{}";
-        const aiData = JSON.parse(aiResponseContent);
+        // Generate structured output
+        const aiData = await structuredModel.invoke(prompt);
 
         return NextResponse.json({
             success: true,
@@ -76,23 +63,4 @@ export async function POST(request: Request) {
         console.error("CV Parse Error:", error);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
-}
-
-function parsePdfBuffer(buffer: Buffer): Promise<string> {
-    return new Promise((resolve, reject) => {
-        const pdfParser = new PDFParser(null, 1);
-
-        pdfParser.on("pdfParser_dataError", (errData: any) => reject(errData.parserError));
-
-        pdfParser.on("pdfParser_dataReady", () => {
-            const rawText = pdfParser.getRawTextContent();
-            try {
-                resolve(decodeURIComponent(rawText));
-            } catch (e) {
-                resolve(rawText);
-            }
-        });
-
-        pdfParser.parseBuffer(buffer);
-    });
 }
