@@ -1,17 +1,6 @@
 import { createClient } from "../../../utils/supabase/server";
-import {
-  Plus,
-  Folder,
-  Clock,
-  ArrowRight,
-  MoreVertical,
-  Calendar,
-  CheckCircle2,
-  Loader2,
-} from "lucide-react";
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import DeleteProjectButton from "../../../components/DeleteProjectButton";
+import ProjectsClient from "./ProjectsClient";
 
 export default async function ProjectsListPage() {
   const supabase = await createClient();
@@ -23,120 +12,112 @@ export default async function ProjectsListPage() {
 
   const { data: membership } = await supabase
     .from("workspace_members")
-    .select("workspace_id")
+    .select("workspace:workspaces(id, name, owner_id)")
     .eq("user_id", user.id)
     .single();
 
-  if (!membership) {
-    redirect("/onboarding");
-  }
+  if (!membership || !membership.workspace) redirect("/onboarding");
 
-  const { data: projects, error } = await supabase
-    .from("projects")
-    .select("*")
-    .eq("workspace_id", membership.workspace_id)
-    .order("created_at", { ascending: false });
+  const workspace = membership.workspace as unknown as { id: string; name: string; owner_id: string };
 
-  // RBAC: Check if user is Admin (Owner or PM)
-  const { data: ws } = await supabase.from("workspaces").select("owner_id").eq("id", membership.workspace_id).single();
-  const { data: member } = await supabase.from("team_members").select("job_title").eq("workspace_id", membership.workspace_id).eq("user_id", user.id).single();
-  
-  const isAdmin = (ws?.owner_id === user.id) || member?.job_title?.includes("Project Manager") || member?.job_title?.includes("PM");
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  const [{ data: projects }, { data: deletedProjects }, { data: sprints }, { data: sprintTasks }, { data: member }] =
+    await Promise.all([
+      supabase
+        .from("projects")
+        .select("*")
+        .eq("workspace_id", workspace.id)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false }),
+      // Soft-deleted within the 30-day recovery window
+      supabase
+        .from("projects")
+        .select("id, name, deleted_at, status, ai_status")
+        .eq("workspace_id", workspace.id)
+        .not("deleted_at", "is", null)
+        .gt("deleted_at", thirtyDaysAgo)
+        .order("deleted_at", { ascending: false }),
+      supabase
+        .from("sprints")
+        .select("id, project_id, status")
+        .eq("workspace_id", workspace.id)
+        .is("deleted_at", null),
+      supabase
+        .from("sprint_tasks")
+        .select("id, sprint_id, status")
+        .eq("workspace_id", workspace.id),
+      supabase
+        .from("workspace_members")
+        .select("role")
+        .eq("workspace_id", workspace.id)
+        .eq("user_id", user.id)
+        .maybeSingle(),
+    ]);
+
+  const isAdmin = workspace.owner_id === user.id || member?.role === "pm";
+
+  // Build sprint count per project
+  const sprintsByProject = new Map<string, number>();
+  sprints?.forEach((s) => {
+    if (s.project_id) {
+      sprintsByProject.set(s.project_id, (sprintsByProject.get(s.project_id) || 0) + 1);
+    }
+  });
+
+  // Build sprint -> project lookup for task counting
+  const sprintToProject = new Map<string, string>();
+  sprints?.forEach((s) => {
+    if (s.project_id) sprintToProject.set(s.id, s.project_id);
+  });
+
+  const tasksByProject = new Map<string, { total: number; completed: number }>();
+  sprintTasks?.forEach((task) => {
+    const projectId = sprintToProject.get(task.sprint_id);
+    if (!projectId) return;
+    const cur = tasksByProject.get(projectId) || { total: 0, completed: 0 };
+    tasksByProject.set(projectId, {
+      total: cur.total + 1,
+      completed: cur.completed + (task.status === "done" || task.status === "completed" ? 1 : 0),
+    });
+  });
+
+  // Enrich projects with computed fields
+  const enrichedProjects = (projects || []).map((p) => {
+    const milestones: any[] = p.ai_data?.milestones || [];
+    const completedMilestones = milestones.filter((m: any) => m.status === "completed").length;
+    const tasks = tasksByProject.get(p.id) || { total: 0, completed: 0 };
+
+    return {
+      ...p,
+      sprintCount: sprintsByProject.get(p.id) || 0,
+      taskCount: tasks.total,
+      completedTaskCount: tasks.completed,
+      milestoneCount: milestones.length,
+      completedMilestoneCount: completedMilestones,
+      milestoneProgress:
+        milestones.length > 0
+          ? Math.round((completedMilestones / milestones.length) * 100)
+          : null,
+    };
+  });
+
+  const total = enrichedProjects.length;
+  const active = enrichedProjects.filter(
+    (p) => p.status === "active" || (!p.status && p.ai_status === "completed")
+  ).length;
+  const completed = enrichedProjects.filter((p) => p.status === "completed").length;
+  const pending = enrichedProjects.filter(
+    (p) => p.status === "pending" || p.status === "planning" || (!p.status && p.ai_status !== "completed")
+  ).length;
 
   return (
-    <div className="max-w-7xl mx-auto space-y-8">
-      
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900">Projects</h1>
-          <p className="text-slate-500 mt-2">
-            Manage your active initiatives and track progress.
-          </p>
-        </div>
-
-        {isAdmin && (
-          <Link
-            href="/dashboard/projects/new"
-            className="btn btn-primary flex items-center gap-2 shadow-lg shadow-indigo-100"
-          >
-            <Plus size={18} />
-            New Project
-          </Link>
-        )}
-      </div>
-
-      {projects && projects.length > 0 ? (
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {projects.map((project) => (
-            <div key={project.id} className="relative group">
-              {isAdmin && <DeleteProjectButton projectId={project.id} projectName={project.name} />}
-              <Link
-                href={`/dashboard/projects/${project.id}`}
-                className="block bg-white border border-slate-200 rounded-2xl p-6 hover:shadow-lg hover:-translate-y-1 transition-all duration-300 relative overflow-hidden"
-            >
-              
-              <div className="absolute top-6 right-6">
-                {project.ai_status === "completed" ? (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-green-50 text-green-700 border border-green-100">
-                    <CheckCircle2 size={12} /> Active
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-100">
-                    <Loader2 size={12} className="animate-spin" /> Processing
-                  </span>
-                )}
-              </div>
-
-              <div className="w-12 h-12 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600 mb-6 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-                <Folder size={24} />
-              </div>
-
-              <h3 className="text-lg font-bold text-slate-900 mb-2 group-hover:text-indigo-600 transition-colors truncate">
-                {project.name}
-              </h3>
-
-              <p className="text-sm text-slate-500 line-clamp-2 h-10 mb-6">
-                {project.ai_data?.summary ||
-                  "AI is generating the project summary..."}
-              </p>
-
-              <div className="pt-6 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-                <div className="flex items-center gap-2">
-                  <Calendar size={14} />
-                  <span>
-                    {project.ai_data?.timeline_weeks
-                      ? `${project.ai_data.timeline_weeks} Weeks`
-                      : "--"}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Clock size={14} />
-                  <span>
-                    {new Date(project.created_at).toLocaleDateString()}
-                  </span>
-                </div>
-              </div>
-              </Link>
-            </div>
-          ))}
-        </div>
-      ) : (
-        
-        <div className="text-center py-24 bg-white border border-slate-200 border-dashed rounded-2xl">
-          <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-400">
-            <Folder size={32} />
-          </div>
-          <h3 className="text-lg font-bold text-slate-900">No Projects Yet</h3>
-          <p className="text-slate-500 mt-2 mb-6 max-w-sm mx-auto">
-            Upload a project charter to get started. The AI will set everything
-            up for you.
-          </p>
-          <Link href="/dashboard/projects/new" className="btn btn-outline">
-            <Plus size={16} className="mr-2" />
-            Create First Project
-          </Link>
-        </div>
-      )}
-    </div>
+    <ProjectsClient
+      projects={enrichedProjects}
+      deletedProjects={(deletedProjects || []) as any[]}
+      workspace={workspace}
+      isAdmin={!!isAdmin}
+      stats={{ total, active, completed, pending }}
+    />
   );
 }

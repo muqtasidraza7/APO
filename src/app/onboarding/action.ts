@@ -39,7 +39,7 @@ export async function createWorkspace(workspaceName: string, skillProfile?: Skil
   const memberData: Record<string, unknown> = {
     workspace_id: workspace.id,
     user_id: user.id,
-    role: "PM",
+    role: "pm",
   };
 
   if (skillProfile) {
@@ -48,7 +48,6 @@ export async function createWorkspace(workspaceName: string, skillProfile?: Skil
     if (skillProfile.experience_level) memberData.experience_level = skillProfile.experience_level;
     if (skillProfile.years_of_experience) memberData.years_of_experience = skillProfile.years_of_experience;
     if (skillProfile.cv_url) memberData.user_cv_url = skillProfile.cv_url;
-    if (skillProfile.capacity_hours_per_week) memberData.capacity_hours_per_week = skillProfile.capacity_hours_per_week;
   }
 
   const { error: memberError } = await supabase
@@ -84,7 +83,7 @@ export async function createWorkspace(workspaceName: string, skillProfile?: Skil
   redirect("/dashboard");
 }
 
-export async function joinWorkspace(workspaceId: string, skillProfile?: SkillProfile) {
+export async function joinWorkspace(workspaceId: string, skillProfile?: SkillProfile, inviteRole?: string) {
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -137,10 +136,12 @@ export async function joinWorkspace(workspaceId: string, skillProfile?: SkillPro
     redirect("/dashboard");
   }
 
+  const assignedRole = inviteRole === "pm" ? "pm" : "member";
+
   const memberData: Record<string, unknown> = {
     workspace_id: workspace.id,
     user_id: user.id,
-    role: "WORKER",
+    role: assignedRole,
   };
 
   if (skillProfile) {
@@ -149,10 +150,9 @@ export async function joinWorkspace(workspaceId: string, skillProfile?: SkillPro
     if (skillProfile.experience_level) memberData.experience_level = skillProfile.experience_level;
     if (skillProfile.years_of_experience) memberData.years_of_experience = skillProfile.years_of_experience;
     if (skillProfile.cv_url) memberData.user_cv_url = skillProfile.cv_url;
-    if (skillProfile.capacity_hours_per_week) memberData.capacity_hours_per_week = skillProfile.capacity_hours_per_week;
   }
 
-  const { error: memberError } = await supabase
+  const { error: memberError } = await adminSupabase
     .from("workspace_members")
     .insert(memberData);
 
@@ -167,15 +167,19 @@ export async function joinWorkspace(workspaceId: string, skillProfile?: SkillPro
     user_id: user.id,
     full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || "Member",
     email: user.email,
-    job_title: skillProfile?.job_title || "Team Member",
+    job_title: skillProfile?.job_title || (assignedRole === "pm" ? "Project Manager" : "Team Member"),
     capacity_hours_per_week: skillProfile?.capacity_hours_per_week || 40,
     status: "online",
     skills: skillProfile?.skills || []
   };
 
-  await supabase
+  const { error: teamError } = await adminSupabase
     .from("team_members")
     .insert(teamMemberData);
+
+  if (teamError) {
+    console.error("Team Member Insert Error:", teamError.message);
+  }
 
   redirect("/dashboard");
 }
@@ -193,7 +197,6 @@ export async function updateSkillProfile(skillProfile: SkillProfile) {
   if (skillProfile.experience_level !== undefined) updateData.experience_level = skillProfile.experience_level;
   if (skillProfile.years_of_experience !== undefined) updateData.years_of_experience = skillProfile.years_of_experience;
   if (skillProfile.cv_url !== undefined) updateData.user_cv_url = skillProfile.cv_url;
-  if (skillProfile.capacity_hours_per_week !== undefined) updateData.capacity_hours_per_week = skillProfile.capacity_hours_per_week;
 
   const { error } = await supabase
     .from("workspace_members")

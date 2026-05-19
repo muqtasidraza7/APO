@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
     // 2. Fetch all tasks for this sprint
     const { data: tasks, error: tasksError } = await supabase
       .from("sprint_tasks")
-      .select("story_points, status, completed_at")
+      .select("time_estimate_hours, status, completed_at")
       .eq("sprint_id", sprintId);
 
     if (tasksError) throw tasksError;
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
     const endDate = new Date(sprint.end_date);
     const durationDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
 
-    const totalPoints = tasks.reduce((sum, t) => sum + (t.story_points || 0), 0);
+    const totalHours = tasks.reduce((sum, t) => sum + (t.time_estimate_hours || 0), 0);
     
     const chartData = [];
     const today = new Date();
@@ -47,16 +47,16 @@ export async function GET(request: NextRequest) {
       currentDate.setDate(startDate.getDate() + i);
       currentDate.setHours(0, 0, 0, 0);
 
-      // Ideal Burndown: Linear decrease from totalPoints to 0
-      const idealRemaining = totalPoints - (totalPoints / (durationDays - 1)) * i;
+      // Ideal Burndown: Linear decrease from totalHours to 0
+      const idealRemaining = totalHours - (totalHours / (durationDays - 1)) * i;
 
-      // Actual Burndown: Total points minus points of tasks completed BEFORE or ON this date
-      let actualRemaining: number | null = totalPoints;
+      // Actual Burndown: Total hours minus hours of tasks completed BEFORE or ON this date
+      let actualRemaining: number | null = totalHours;
       if (currentDate <= today) {
-        const completedPoints = tasks
+        const completedHours = tasks
           .filter(t => t.status === "done" && t.completed_at && new Date(t.completed_at) <= new Date(currentDate.getTime() + 86400000)) // Include end of day
-          .reduce((sum, t) => sum + (t.story_points || 0), 0);
-        actualRemaining = totalPoints - completedPoints;
+          .reduce((sum, t) => sum + (t.time_estimate_hours || 0), 0);
+        actualRemaining = totalHours - completedHours;
       } else {
         actualRemaining = null; // No data for future dates
       }
@@ -71,7 +71,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      totalPoints,
+      totalHours,
       chartData,
       sprintName: sprint.name
     });

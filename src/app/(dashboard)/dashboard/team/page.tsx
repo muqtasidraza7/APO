@@ -1,28 +1,68 @@
-
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
 import { createClient } from "../../../utils/supabase/client";
-import { Users, UserPlus, Filter, RefreshCw, CheckCircle2, Link as LinkIcon, ShieldAlert, X, Loader2, AlertTriangle } from "lucide-react";
+import {
+  Users,
+  Filter,
+  RefreshCw,
+  CheckCircle2,
+  Link as LinkIcon,
+  ShieldAlert,
+  X,
+  Loader2,
+  Trash2,
+  RotateCcw,
+  ChevronDown,
+  ShieldCheck,
+  Crown,
+  Copy,
+  Check,
+  AlertTriangle,
+} from "lucide-react";
 import TeamMemberCard from "../../../components/TeamMemberCard";
 import CapacityGauge from "../../../components/CapacityGauge";
-import AddMemberModal from "../../../components/AddMemberModal";
+import ChangeRoleModal from "../../../components/ChangeRoleModal";
+import EditMemberModal from "../../../components/EditMemberModal";
 import AIAssignPanel from "../../../components/AIAssignPanel";
 import AssignTaskModal from "../../../components/AssignTaskModal";
 import AssignmentExplainer from "../../../components/AssignmentExplainer";
-import { removeTeamMember } from "./actions";
+import { removeTeamMember, restoreTeamMember } from "./actions";
 
-interface TeamMember {
+export interface MilestoneStatus {
+  title: string;
+  week: number;
+  deadline: string;
+  phase: "active" | "deferred" | "overdue" | "done";
+  is_done: boolean;
+  auto_completed: boolean;
+  manually_completed: boolean;
+  sprint_tasks_total: number;
+  sprint_tasks_done: number;
+  active_hours: number;
+}
+
+export interface ProjectBreakdown {
+  project_id: string;
+  project_name: string;
+  milestones: MilestoneStatus[];
+  sprint_tasks_active: number;
+  sprint_tasks_done: number;
+}
+
+export interface TeamMember {
   id: string;
   user_id: string;
   full_name: string;
-  email: string;
+  email?: string;
   job_title?: string;
   avatar_url?: string;
   status: "online" | "away" | "offline" | "busy";
   skills: string[];
   capacity_hours_per_week: number;
   performance_score?: number;
+  experience_level?: string | null;
+  years_of_experience?: number | null;
   patterns?: {
     id: string;
     pattern_type: "task_incompatibility" | "group_conflict";
@@ -31,198 +71,156 @@ interface TeamMember {
     task_type?: string;
     created_at: string;
   }[];
-  workload?: {
-    total_tasks: number;
-    active_tasks: number;
-    completed_tasks: number;
-    estimated_hours_remaining: number;
-    total_hours_logged: number;
-    utilization_percentage: number;
+  projects: ProjectBreakdown[];
+  load: {
+    active_hours: number;
+    deferred_hours: number;
+    capacity_monthly: number;
+    utilization_pct: number;
   };
-  active_tasks?: any[];
-  completed_this_month?: number;
+  totals: {
+    milestones_done: number;
+    milestones_total: number;
+    sprint_tasks_done: number;
+    sprint_tasks_total: number;
+  };
 }
 
 export default function TeamDashboardPage() {
   const supabase = createClient();
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [ownerId, setOwnerId] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [roleMap, setRoleMap] = useState<
+    Map<string, "owner" | "pm" | "member">
+  >(new Map());
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [filterStatus, setFilterStatus] = useState<string>("all");
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [assigningMember, setAssigningMember] = useState<TeamMember | null>(null);
-  const [toast, setToast] = useState<{ title: string; project: string } | null>(null);
-  // 6.3: Group conflict recording modal
+  const [assigningMember, setAssigningMember] = useState<TeamMember | null>(
+    null,
+  );
+  const [changingRoleMember, setChangingRoleMember] =
+    useState<TeamMember | null>(null);
+  const [editingMember, setEditingMember] = useState<TeamMember | null>(null);
+  const [showInvitePanel, setShowInvitePanel] = useState(false);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ title: string; sub: string } | null>(
+    null,
+  );
+
   const [showConflictModal, setShowConflictModal] = useState(false);
   const [conflictMemberA, setConflictMemberA] = useState("");
   const [conflictMemberB, setConflictMemberB] = useState("");
   const [conflictReason, setConflictReason] = useState("");
-  const [conflictSeverity, setConflictSeverity] = useState<"info" | "caution" | "blocker">("caution");
+  const [conflictSeverity, setConflictSeverity] = useState<
+    "info" | "caution" | "blocker"
+  >("caution");
   const [recordingConflict, setRecordingConflict] = useState(false);
   const [conflictError, setConflictError] = useState("");
 
-  // Remove member state
   const [removingMember, setRemovingMember] = useState<TeamMember | null>(null);
   const [removeConfirmText, setRemoveConfirmText] = useState("");
   const [removeError, setRemoveError] = useState("");
   const [isRemoving, setIsRemoving] = useState(false);
 
+  const [deletedMembers, setDeletedMembers] = useState<
+    { id: string; full_name: string; deleted_at: string }[]
+  >([]);
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [restoringMemberId, setRestoringMemberId] = useState<string | null>(
+    null,
+  );
+  const [trashError, setTrashError] = useState("");
+
+  const showToast = (title: string, sub: string) => {
+    setToast({ title, sub });
+    setTimeout(() => setToast(null), 4000);
+  };
+
   useEffect(() => {
     const resolveWorkspace = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) return;
+      setCurrentUserId(user.id);
+
       const { data } = await supabase
         .from("workspace_members")
-        .select("workspace_id")
+        .select("workspace_id, role")
         .eq("user_id", user.id)
         .single();
-      if (data) {
-        setWorkspaceId(data.workspace_id);
-        
-        // Check RBAC
-        const { data: ws } = await supabase.from("workspaces").select("owner_id").eq("id", data.workspace_id).single();
-        const isOwner = ws?.owner_id === user.id;
-        
-        const { data: member } = await supabase.from("team_members")
-          .select("job_title")
-          .eq("workspace_id", data.workspace_id)
-          .eq("user_id", user.id)
-          .single();
-        
-        const isPM = member?.job_title?.includes("Project Manager") || member?.job_title?.includes("PM");
-        setIsAdmin(isOwner || !!isPM);
+      if (!data) return;
+
+      setWorkspaceId(data.workspace_id);
+
+      const { data: ws } = await supabase
+        .from("workspaces")
+        .select("owner_id")
+        .eq("id", data.workspace_id)
+        .single();
+
+      const wsOwnerId = ws?.owner_id || null;
+      setOwnerId(wsOwnerId);
+
+      const isOwner = wsOwnerId === user.id;
+      const callerRole = (data.role as string)?.toLowerCase();
+      setIsAdmin(isOwner || callerRole === "pm");
+
+      // Build role map for all workspace members
+      const { data: allMembers } = await supabase
+        .from("workspace_members")
+        .select("user_id, role")
+        .eq("workspace_id", data.workspace_id);
+
+      const map = new Map<string, "owner" | "pm" | "member">();
+      for (const m of allMembers || []) {
+        const r = (m.role as string)?.toLowerCase();
+        map.set(
+          m.user_id,
+          m.user_id === wsOwnerId ? "owner" : r === "pm" ? "pm" : "member",
+        );
       }
+      setRoleMap(map);
+
+      const thirtyDaysAgo = new Date(
+        Date.now() - 30 * 24 * 60 * 60 * 1000,
+      ).toISOString();
+      const { data: deletedRows } = await supabase
+        .from("team_members")
+        .select("id, full_name, deleted_at")
+        .eq("workspace_id", data.workspace_id)
+        .not("deleted_at", "is", null)
+        .gt("deleted_at", thirtyDaysAgo)
+        .order("deleted_at", { ascending: false });
+      setDeletedMembers(
+        (deletedRows || []) as {
+          id: string;
+          full_name: string;
+          deleted_at: string;
+        }[],
+      );
     };
     resolveWorkspace();
   }, []);
 
   const fetchTeamMembers = useCallback(async () => {
     if (!workspaceId) return;
+    setLoading(true);
     try {
-      setLoading(true);
-
-      const { data: members, error } = await supabase
-        .from("team_members")
-        .select("*")
-        .eq("workspace_id", workspaceId);
-
-      if (error) {
-        console.error("Error fetching team members:", error);
-        setTeamMembers([]);
-        return;
-      }
-
-      const { data: activities } = await supabase
-        .from("team_activity")
-        .select("id, team_member_id, metadata, description, activity_type, created_at")
-        .eq("workspace_id", workspaceId)
-        .in("activity_type", ["task_assigned", "task_completed"]);
-
-      // Build a net workload per member: add assigned hours, subtract completed hours
-      const assignmentsByMember: Record<string, { title: string; hours: number }[]> = {};
-      const completedByMember: Record<string, { title: string; completedAt: string }[]> = {};
-
-      const startOfMonth = new Date();
-      startOfMonth.setDate(1);
-      startOfMonth.setHours(0, 0, 0, 0);
-
-      for (const act of activities || []) {
-        const memberId = act.team_member_id;
-        if (!memberId) continue;
-
-        if (act.activity_type === "task_assigned" && act.metadata?.status !== "removed") {
-          if (!assignmentsByMember[memberId]) assignmentsByMember[memberId] = [];
-          assignmentsByMember[memberId].push({
-            title: act.metadata?.task_title || act.description || "Task",
-            hours: act.metadata?.estimated_hours || 0,
-          });
-        }
-
-        if (act.activity_type === "task_completed") {
-          if (!completedByMember[memberId]) completedByMember[memberId] = [];
-          completedByMember[memberId].push({
-            title: act.metadata?.task_title || act.description || "Task",
-            completedAt: act.created_at,
-          });
-        }
-      }
-
-      // Fetch all unresolved patterns for this workspace
-      const { data: patterns } = await supabase
-        .from("worker_patterns")
-        .select("*")
-        .eq("workspace_id", workspaceId)
-        .eq("resolved", false);
-
-      // Group patterns by the member they apply to
-      const patternsByMember: Record<string, any[]> = {};
-      for (const p of patterns || []) {
-        const typed = {
-          ...p,
-          pattern_type: p.pattern_type as "task_incompatibility" | "group_conflict",
-        };
-        if (p.pattern_type === "task_incompatibility" && p.member_id) {
-          if (!patternsByMember[p.member_id]) patternsByMember[p.member_id] = [];
-          patternsByMember[p.member_id].push(typed);
-        }
-        if (p.pattern_type === "group_conflict") {
-          if (p.member_id_a) {
-            if (!patternsByMember[p.member_id_a]) patternsByMember[p.member_id_a] = [];
-            patternsByMember[p.member_id_a].push(typed);
-          }
-          if (p.member_id_b) {
-            if (!patternsByMember[p.member_id_b]) patternsByMember[p.member_id_b] = [];
-            patternsByMember[p.member_id_b].push(typed);
-          }
-        }
-      }
-
-      const mapped: TeamMember[] = (members || []).map((m) => {
-        const allTasks = assignmentsByMember[m.id] || [];
-        const completedTasks = completedByMember[m.id] || [];
-        
-        // Build set of completed task titles so we can exclude them from active
-        const completedTitles = new Set(completedTasks.map((t) => t.title));
-        
-        // Active tasks = assigned tasks that haven't been completed yet
-        const activeTasks = allTasks.filter((t) => !completedTitles.has(t.title));
-        const activeHours = activeTasks.reduce((sum, t) => sum + t.hours, 0);
-        
-        const capacity = m.capacity_hours_per_week || 40;
-        const utilization = capacity > 0 ? Math.round((activeHours / capacity) * 100) : 0;
-
-        // completed_this_month = tasks completed in the current calendar month
-        const completedThisMonth = completedTasks.filter(
-          (t) => new Date(t.completedAt) >= startOfMonth
-        ).length;
-
-        return {
-          ...m,
-          full_name: m.full_name || m.job_title || "Team Member",
-          email: m.email || "",
-          performance_score: m.performance_score ?? 100,
-          patterns: patternsByMember[m.id] || [],
-          workload: {
-            total_tasks: allTasks.length,
-            active_tasks: activeTasks.length,
-            completed_tasks: completedTasks.length,
-            estimated_hours_remaining: activeHours,
-            total_hours_logged: completedTasks.length * 8,
-            utilization_percentage: utilization,
-          },
-          active_tasks: activeTasks.map((t, i) => ({
-            id: String(i),
-            title: t.title,
-            status: "in_progress",
-          })),
-          completed_this_month: completedThisMonth,
-        };
+      const res = await fetch("/api/team/workload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workspaceId }),
       });
-
-      setTeamMembers(mapped);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      const members: TeamMember[] = data.members || [];
+      setTeamMembers(members);
     } catch (err) {
-      console.error("Unexpected error:", err);
+      console.error("Failed to fetch team:", err);
       setTeamMembers([]);
     } finally {
       setLoading(false);
@@ -234,39 +232,50 @@ export default function TeamDashboardPage() {
   }, [workspaceId, fetchTeamMembers]);
 
   const metrics = (() => {
-    const totalMembers = teamMembers.length;
-    const totalTasks = teamMembers.reduce((s, m) => s + (m.workload?.active_tasks || 0), 0);
-    const totalCap = teamMembers.reduce((s, m) => s + m.capacity_hours_per_week, 0);
-    const totalUsed = teamMembers.reduce((s, m) => s + (m.workload?.estimated_hours_remaining || 0), 0);
-    const utilizationPercentage = totalCap > 0 ? (totalUsed / totalCap) * 100 : 0;
+    const totalCap = teamMembers.reduce(
+      (s, m) => s + m.load.capacity_monthly,
+      0,
+    );
+    const totalUsed = teamMembers.reduce((s, m) => s + m.load.active_hours, 0);
     return {
-      totalMembers,
-      totalTasks,
+      totalMembers: teamMembers.length,
+      totalTasks: teamMembers.reduce(
+        (s, m) => s + m.totals.sprint_tasks_total,
+        0,
+      ),
       availableHours: Math.max(0, totalCap - totalUsed),
-      utilizationPercentage,
-      overloadedCount: teamMembers.filter(m => (m.workload?.utilization_percentage || 0) >= 90).length,
-      balancedCount: teamMembers.filter(m => { const u = m.workload?.utilization_percentage || 0; return u >= 50 && u < 90; }).length,
-      underutilizedCount: teamMembers.filter(m => (m.workload?.utilization_percentage || 0) < 50).length,
+      utilizationPercentage: totalCap > 0 ? (totalUsed / totalCap) * 100 : 0,
+      overloadedCount: teamMembers.filter((m) => m.load.utilization_pct >= 90)
+        .length,
+      balancedCount: teamMembers.filter(
+        (m) => m.load.utilization_pct >= 50 && m.load.utilization_pct < 90,
+      ).length,
+      underutilizedCount: teamMembers.filter((m) => m.load.utilization_pct < 50)
+        .length,
     };
   })();
 
-  const filtered = teamMembers.filter(m => {
+  const filtered = teamMembers.filter((m) => {
     if (filterStatus === "all") return true;
-    if (filterStatus === "online") return m.status === "online" || m.status === "busy";
-    if (filterStatus === "overloaded") return (m.workload?.utilization_percentage || 0) >= 90;
-    if (filterStatus === "available") return (m.workload?.utilization_percentage || 0) < 50;
+    if (filterStatus === "overloaded") return m.load.utilization_pct >= 90;
+    if (filterStatus === "available") return m.load.utilization_pct < 50;
+    if (filterStatus === "with-projects") return m.projects.length > 0;
     return true;
   });
 
-  const showToast = (title: string, project: string) => {
-    setToast({ title, project });
-    setTimeout(() => setToast(null), 4000);
-  };
-
   const handleRecordConflict = async () => {
-    if (!conflictMemberA || !conflictMemberB) { setConflictError("Please select both members."); return; }
-    if (conflictMemberA === conflictMemberB) { setConflictError("Please select two different members."); return; }
-    if (!conflictReason.trim()) { setConflictError("Please enter a reason."); return; }
+    if (!conflictMemberA || !conflictMemberB) {
+      setConflictError("Please select both members.");
+      return;
+    }
+    if (conflictMemberA === conflictMemberB) {
+      setConflictError("Please select two different members.");
+      return;
+    }
+    if (!conflictReason.trim()) {
+      setConflictError("Please enter a reason.");
+      return;
+    }
     setRecordingConflict(true);
     setConflictError("");
     try {
@@ -285,10 +294,15 @@ export default function TeamDashboardPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setShowConflictModal(false);
-      setConflictMemberA(""); setConflictMemberB("");
-      setConflictReason(""); setConflictSeverity("caution");
-      showToast("Group conflict recorded", "AI will avoid co-assigning these members");
-      fetchTeamMembers(); // refresh scores
+      setConflictMemberA("");
+      setConflictMemberB("");
+      setConflictReason("");
+      setConflictSeverity("caution");
+      showToast(
+        "Group conflict recorded",
+        "AI will avoid co-assigning these members",
+      );
+      fetchTeamMembers();
     } catch (err: any) {
       setConflictError(err.message || "Failed to record conflict.");
     } finally {
@@ -305,13 +319,58 @@ export default function TeamDashboardPage() {
     if (result?.error) {
       setRemoveError(result.error);
     } else {
+      setDeletedMembers((prev) => [
+        {
+          id: removingMember.id,
+          full_name: removingMember.full_name,
+          deleted_at: new Date().toISOString(),
+        },
+        ...prev,
+      ]);
       setRemovingMember(null);
       setRemoveConfirmText("");
       fetchTeamMembers();
-      showToast(`${removingMember.full_name} removed`, "Team roster updated");
+      showToast(
+        `${removingMember.full_name} moved to trash`,
+        "Recoverable for 30 days",
+      );
     }
     setIsRemoving(false);
   };
+
+  const handleRestoreMember = async (memberId: string, memberName: string) => {
+    if (!workspaceId) return;
+    setRestoringMemberId(memberId);
+    setTrashError("");
+    const result = await restoreTeamMember(memberId, workspaceId);
+    if (result?.error) {
+      setTrashError(result.error);
+    } else {
+      setDeletedMembers((prev) => prev.filter((m) => m.id !== memberId));
+      fetchTeamMembers();
+      showToast(`${memberName} restored`, "Member is back on the team");
+    }
+    setRestoringMemberId(null);
+  };
+
+  function memberDaysRemaining(deletedAt: string) {
+    return Math.max(
+      0,
+      30 -
+        Math.floor(
+          (Date.now() - new Date(deletedAt).getTime()) / (1000 * 60 * 60 * 24),
+        ),
+    );
+  }
+
+  function copyInvite(role: "pm" | "member") {
+    if (!workspaceId || typeof window === "undefined") return;
+    const link = `${window.location.origin}/onboarding?invite=${workspaceId}&role=${role}`;
+    navigator.clipboard.writeText(link);
+    setCopiedKey(role);
+    showToast("Invite link copied!", link.slice(0, 60) + "…");
+    setTimeout(() => setCopiedKey(null), 2000);
+  }
 
   if (loading && !workspaceId) {
     return (
@@ -323,96 +382,175 @@ export default function TeamDashboardPage() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-8">
-
       {toast && (
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 bg-white border border-green-200 shadow-xl rounded-2xl px-5 py-4 animate-in slide-in-from-bottom-4">
           <CheckCircle2 size={20} className="text-green-500 flex-shrink-0" />
           <div>
-            <p className="font-semibold text-slate-900 text-sm">Task Assigned!</p>
-            <p className="text-xs text-slate-500">&quot;{toast.title}&quot; → {toast.project}</p>
+            <p className="font-semibold text-slate-900 text-sm">
+              {toast.title}
+            </p>
+            <p className="text-xs text-slate-500">{toast.sub}</p>
           </div>
         </div>
       )}
 
-      <div className="flex items-end justify-between">
+      {/* Header */}
+      <div className="flex items-end justify-between flex-wrap gap-4">
         <div>
-          <p className="text-sm font-medium text-slate-400 mb-1">People Management</p>
+          <p className="text-sm font-medium text-slate-400 mb-1">
+            People Management
+          </p>
           <h1 className="text-3xl font-bold text-slate-900">Team Dashboard</h1>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 flex-wrap">
           <button
             onClick={fetchTeamMembers}
             className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-2"
           >
-            <RefreshCw size={16} />
-            Refresh
+            <RefreshCw size={16} /> Refresh
           </button>
-          
+
           {teamMembers.length >= 2 && (
             <button
               onClick={() => setShowConflictModal(true)}
               className="px-4 py-2 bg-amber-50 border border-amber-200 rounded-lg text-sm font-medium text-amber-700 hover:bg-amber-100 transition-colors flex items-center gap-2"
             >
-              <ShieldAlert size={16} />
-              Record Conflict
+              <ShieldAlert size={16} /> Record Conflict
             </button>
           )}
 
           {isAdmin && (
-            <>
+            <div className="relative">
               <button
-                onClick={() => {
-                  if (workspaceId && typeof window !== "undefined") {
-                    const inviteLink = `${window.location.origin}/onboarding?invite=${workspaceId}`;
-                    navigator.clipboard.writeText(inviteLink);
-                    alert("Invite link copied to clipboard");
-                  }
-                }}
-                className="px-4 py-2 bg-indigo-50 border border-indigo-100 rounded-lg text-sm font-medium text-indigo-700 hover:bg-indigo-100 transition-colors flex items-center gap-2"
+                onClick={() => setShowInvitePanel((v) => !v)}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
               >
-                <LinkIcon size={16} />
-                Copy Invite Link
+                <LinkIcon size={16} /> Invite People
               </button>
-              <button
-                onClick={() => setShowAddModal(true)}
-                className="btn btn-primary flex items-center gap-2"
-              >
-                <UserPlus size={18} />
-                Add Member
-              </button>
-            </>
+
+              {showInvitePanel && (
+                <>
+                  <div
+                    className="fixed inset-0 z-30"
+                    onClick={() => setShowInvitePanel(false)}
+                  />
+                  <div className="absolute right-0 top-11 z-40 w-80 bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden">
+                    <div className="px-4 py-3 border-b border-slate-100 bg-slate-50">
+                      <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+                        Invite to Workspace
+                      </p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Share a link — they join with the correct role
+                        automatically
+                      </p>
+                    </div>
+
+                    {/* Team Member link */}
+                    <div className="px-4 py-3.5 border-b border-slate-50">
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 bg-slate-100 rounded-lg flex items-center justify-center">
+                            <Users size={13} className="text-slate-600" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-slate-800">
+                              Team Member
+                            </p>
+                            <p className="text-[11px] text-slate-400">
+                              Works on tasks, limited access
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => copyInvite("member")}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                            copiedKey === "member"
+                              ? "bg-green-100 text-green-700 border border-green-200"
+                              : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+                          }`}
+                        >
+                          {copiedKey === "member" ? (
+                            <Check size={12} />
+                          ) : (
+                            <Copy size={12} />
+                          )}
+                          {copiedKey === "member" ? "Copied!" : "Copy"}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Project Manager link — owner only */}
+                    {ownerId === currentUserId && (
+                      <div className="px-4 py-3.5">
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 bg-indigo-100 rounded-lg flex items-center justify-center">
+                              <ShieldCheck
+                                size={13}
+                                className="text-indigo-600"
+                              />
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-slate-800">
+                                Project Manager
+                              </p>
+                              <p className="text-[11px] text-slate-400">
+                                Full access to all features
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => copyInvite("pm")}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                              copiedKey === "pm"
+                                ? "bg-green-100 text-green-700 border border-green-200"
+                                : "bg-indigo-50 hover:bg-indigo-100 text-indigo-700"
+                            }`}
+                          >
+                            {copiedKey === "pm" ? (
+                              <Check size={12} />
+                            ) : (
+                              <Copy size={12} />
+                            )}
+                            {copiedKey === "pm" ? "Copied!" : "Copy"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="px-4 py-2.5 bg-amber-50 border-t border-amber-100">
+                      <p className="text-[10px] text-amber-700 flex items-center gap-1.5">
+                        <Crown size={10} className="flex-shrink-0" />
+                        Only the owner can generate PM invite links
+                      </p>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
           )}
         </div>
       </div>
 
       <CapacityGauge {...metrics} />
 
-      {workspaceId && teamMembers.length > 0 && (
-        <AIAssignPanel
-          workspaceId={workspaceId}
-          teamMemberCount={teamMembers.length}
-        />
-      )}
-
-      {workspaceId && teamMembers.length > 0 && (
-        <AssignmentExplainer workspaceId={workspaceId} />
-      )}
-
       {teamMembers.length === 0 && !loading ? (
         <div className="text-center py-16 bg-white border-2 border-dashed border-slate-200 rounded-2xl">
           <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-6">
             <Users size={40} className="text-indigo-600" />
           </div>
-          <h2 className="text-2xl font-bold text-slate-900 mb-3">No Team Members Yet</h2>
+          <h2 className="text-2xl font-bold text-slate-900 mb-3">
+            No Team Members Yet
+          </h2>
           <p className="text-slate-500 mb-8 max-w-md mx-auto">
-            Add workspace members to your team. The AI will use their skills and availability to assign tasks automatically.
+            Add workspace members to your team. The AI will use their skills and
+            availability to assign tasks automatically.
           </p>
           <button
-            onClick={() => setShowAddModal(true)}
+            onClick={() => setShowInvitePanel(true)}
             className="btn btn-primary"
           >
-            <UserPlus size={18} className="mr-2" />
-            Add First Member
+            <LinkIcon size={18} className="mr-2" /> Invite First Member
           </button>
         </div>
       ) : (
@@ -422,17 +560,18 @@ export default function TeamDashboardPage() {
             <div className="flex gap-2 flex-wrap">
               {[
                 { value: "all", label: "All Members" },
-                { value: "online", label: "Online" },
                 { value: "overloaded", label: "Overloaded" },
                 { value: "available", label: "Available" },
-              ].map(f => (
+                { value: "with-projects", label: "Has Projects" },
+              ].map((f) => (
                 <button
                   key={f.value}
                   onClick={() => setFilterStatus(f.value)}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filterStatus === f.value
-                    ? "bg-indigo-600 text-white"
-                    : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
-                    }`}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    filterStatus === f.value
+                      ? "bg-indigo-600 text-white"
+                      : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
+                  }`}
                 >
                   {f.label}
                 </button>
@@ -453,14 +592,22 @@ export default function TeamDashboardPage() {
                 <TeamMemberCard
                   key={member.id}
                   member={member}
+                  workspaceId={workspaceId!}
+                  workspaceRole={roleMap.get(member.user_id) ?? "member"}
+                  callerIsOwner={ownerId === currentUserId}
                   onAssignTask={() => setAssigningMember(member)}
-                  onMessage={() => { }}
-                  onViewDetails={() => { }}
                   onRemove={(m) => {
                     setRemovingMember(m);
                     setRemoveConfirmText("");
                     setRemoveError("");
                   }}
+                  onChangeRole={
+                    isAdmin ? (m) => setChangingRoleMember(m) : undefined
+                  }
+                  onEditProfile={
+                    isAdmin ? (m) => setEditingMember(m) : undefined
+                  }
+                  onPatternRecorded={fetchTeamMembers}
                 />
               ))}
             </div>
@@ -474,13 +621,44 @@ export default function TeamDashboardPage() {
         </>
       )}
 
-      {showAddModal && workspaceId && (
-        <AddMemberModal
+      {changingRoleMember && workspaceId && (
+        <ChangeRoleModal
+          member={changingRoleMember}
+          currentRole={roleMap.get(changingRoleMember.user_id) ?? "member"}
           workspaceId={workspaceId}
-          onClose={() => setShowAddModal(false)}
-          onSuccess={() => {
-            setShowAddModal(false);
-            fetchTeamMembers();
+          callerIsOwner={ownerId === currentUserId}
+          onClose={() => setChangingRoleMember(null)}
+          onSuccess={(newRole) => {
+            setRoleMap((prev) => {
+              const next = new Map(prev);
+              next.set(changingRoleMember.user_id, newRole);
+              return next;
+            });
+            setChangingRoleMember(null);
+            showToast(
+              `Role updated`,
+              `${changingRoleMember.full_name} is now a ${newRole === "pm" ? "Project Manager" : "Team Member"}`,
+            );
+          }}
+        />
+      )}
+
+      {editingMember && workspaceId && (
+        <EditMemberModal
+          member={editingMember}
+          workspaceId={workspaceId}
+          onClose={() => setEditingMember(null)}
+          onSaved={(updated) => {
+            setTeamMembers((prev) =>
+              prev.map((m) =>
+                m.id === editingMember.id ? { ...m, ...updated } : m,
+              ),
+            );
+            setEditingMember(null);
+            showToast(
+              "Profile updated",
+              `${editingMember.full_name}'s work profile has been saved`,
+            );
           }}
         />
       )}
@@ -489,16 +667,19 @@ export default function TeamDashboardPage() {
         <AssignTaskModal
           member={assigningMember}
           workspaceId={workspaceId}
-          onClose={() => { setAssigningMember(null); fetchTeamMembers(); }}
+          onClose={() => {
+            setAssigningMember(null);
+            fetchTeamMembers();
+          }}
           onSuccess={(taskTitle, projectName) => {
             setAssigningMember(null);
-            showToast(taskTitle, projectName);
+            showToast(`"${taskTitle}" assigned`, projectName);
             fetchTeamMembers();
           }}
         />
       )}
 
-      {/* 6.3: Group Conflict Recording Modal */}
+      {/* Group Conflict Modal */}
       {showConflictModal && workspaceId && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6">
@@ -506,75 +687,101 @@ export default function TeamDashboardPage() {
               <h2 className="text-xl font-bold flex items-center gap-2 text-slate-900">
                 <ShieldAlert className="text-amber-500" /> Record Group Conflict
               </h2>
-              <button onClick={() => setShowConflictModal(false)} className="text-slate-400 hover:text-slate-600 bg-slate-100 hover:bg-slate-200 p-2 rounded-full transition-colors">
-                <X size={20} />
+              <button
+                onClick={() => setShowConflictModal(false)}
+                className="p-2 hover:bg-slate-100 rounded-xl"
+              >
+                <X size={20} className="text-slate-400" />
               </button>
             </div>
-            
-            <p className="text-sm text-slate-500 mb-6">
-              Record a conflict between two members. The AI will avoid assigning them to the same project or dependent tasks in the future.
+            <p className="text-sm text-slate-500 mb-5">
+              The AI will avoid assigning these two members to the same tasks in
+              the future.
             </p>
-
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-1">Member A</label>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1">
+                    Member A
+                  </label>
                   <select
                     value={conflictMemberA}
-                    onChange={e => setConflictMemberA(e.target.value)}
-                    className="w-full px-3 py-2 border rounded-xl"
+                    onChange={(e) => setConflictMemberA(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-xl text-sm"
                   >
                     <option value="">Select...</option>
-                    {teamMembers.map(m => <option key={m.id} value={m.id} disabled={m.id === conflictMemberB}>{m.full_name}</option>)}
+                    {teamMembers.map((m) => (
+                      <option
+                        key={m.id}
+                        value={m.id}
+                        disabled={m.id === conflictMemberB}
+                      >
+                        {m.full_name}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-1">Member B</label>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1">
+                    Member B
+                  </label>
                   <select
                     value={conflictMemberB}
-                    onChange={e => setConflictMemberB(e.target.value)}
-                    className="w-full px-3 py-2 border rounded-xl"
+                    onChange={(e) => setConflictMemberB(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-xl text-sm"
                   >
                     <option value="">Select...</option>
-                    {teamMembers.map(m => <option key={m.id} value={m.id} disabled={m.id === conflictMemberA}>{m.full_name}</option>)}
+                    {teamMembers.map((m) => (
+                      <option
+                        key={m.id}
+                        value={m.id}
+                        disabled={m.id === conflictMemberA}
+                      >
+                        {m.full_name}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
-
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">Reason</label>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">
+                  Reason
+                </label>
                 <input
                   type="text"
                   value={conflictReason}
-                  onChange={e => setConflictReason(e.target.value)}
+                  onChange={(e) => setConflictReason(e.target.value)}
                   placeholder="e.g., Communication breakdown on previous project"
-                  className="w-full px-3 py-2 border rounded-xl"
+                  className="w-full px-3 py-2 border rounded-xl text-sm"
                 />
               </div>
-
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">Severity</label>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">
+                  Severity
+                </label>
                 <select
                   value={conflictSeverity}
-                  onChange={e => setConflictSeverity(e.target.value as any)}
-                  className="w-full px-3 py-2 border rounded-xl"
+                  onChange={(e) => setConflictSeverity(e.target.value as any)}
+                  className="w-full px-3 py-2 border rounded-xl text-sm"
                 >
                   <option value="info">Info (Prefer not to mix)</option>
                   <option value="caution">Caution (Avoid if possible)</option>
                   <option value="blocker">Blocker (Never co-assign)</option>
                 </select>
               </div>
-
               {conflictError && (
-                <div className="p-3 bg-red-50 text-red-700 text-sm rounded-xl">{conflictError}</div>
+                <div className="p-3 bg-red-50 text-red-700 text-sm rounded-xl">
+                  {conflictError}
+                </div>
               )}
-
               <button
                 onClick={handleRecordConflict}
                 disabled={recordingConflict}
-                className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-medium mt-2 flex justify-center items-center gap-2"
+                className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-medium flex justify-center items-center gap-2"
               >
-                {recordingConflict && <Loader2 size={16} className="animate-spin" />}
+                {recordingConflict && (
+                  <Loader2 size={16} className="animate-spin" />
+                )}
                 Confirm Conflict
               </button>
             </div>
@@ -582,35 +789,128 @@ export default function TeamDashboardPage() {
         </div>
       )}
 
+      {/* Recently Removed Members */}
+      {isAdmin && deletedMembers.length > 0 && (
+        <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-sm">
+          <button
+            onClick={() => setTrashOpen((o) => !o)}
+            className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-50 transition-colors"
+          >
+            <div className="flex items-center gap-2.5 text-sm font-semibold text-slate-600">
+              <Trash2 size={15} className="text-red-400" />
+              Recently Removed Members
+              <span className="bg-red-50 text-red-500 border border-red-100 text-[11px] font-bold px-2 py-0.5 rounded-full">
+                {deletedMembers.length}
+              </span>
+            </div>
+            <ChevronDown
+              size={16}
+              className={`text-slate-400 transition-transform duration-200 ${trashOpen ? "rotate-180" : ""}`}
+            />
+          </button>
+
+          {trashOpen && (
+            <div className="border-t border-slate-100 divide-y divide-slate-50">
+              {trashError && (
+                <div className="px-5 py-2.5 bg-red-50 text-red-600 text-xs font-medium flex items-center justify-between">
+                  {trashError}
+                  <button onClick={() => setTrashError("")}>
+                    <X size={13} />
+                  </button>
+                </div>
+              )}
+              {deletedMembers.map((m) => {
+                const days = memberDaysRemaining(m.deleted_at);
+                return (
+                  <div
+                    key={m.id}
+                    className="flex items-center gap-4 px-5 py-3.5 hover:bg-slate-50/60 transition-colors"
+                  >
+                    <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
+                      <Users size={14} className="text-slate-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-slate-700 truncate">
+                        {m.full_name}
+                      </p>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {days > 0
+                          ? `Permanently removed in ${days} day${days !== 1 ? "s" : ""}`
+                          : "Expires today"}
+                      </p>
+                    </div>
+                    <span
+                      className={`text-[11px] font-bold px-2 py-0.5 rounded-full border flex-shrink-0 ${
+                        days <= 3
+                          ? "bg-red-50 text-red-600 border-red-200"
+                          : days <= 7
+                            ? "bg-amber-50 text-amber-600 border-amber-200"
+                            : "bg-slate-50 text-slate-500 border-slate-200"
+                      }`}
+                    >
+                      {days}d left
+                    </span>
+                    <button
+                      onClick={() => handleRestoreMember(m.id, m.full_name)}
+                      disabled={restoringMemberId === m.id}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
+                    >
+                      {restoringMemberId === m.id ? (
+                        <Loader2 size={13} className="animate-spin" />
+                      ) : (
+                        <RotateCcw size={13} />
+                      )}
+                      Restore
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Remove Member Modal */}
       {removingMember && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-            {/* Header */}
             <div className="bg-red-50 border-b border-red-100 px-6 py-5 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center">
                   <AlertTriangle size={20} className="text-red-600" />
                 </div>
                 <div>
-                  <h2 className="font-bold text-slate-900">Remove Team Member</h2>
-                  <p className="text-xs text-slate-500">This action cannot be undone</p>
+                  <h2 className="font-bold text-slate-900">
+                    Remove Team Member
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    Recoverable for 30 days
+                  </p>
                 </div>
               </div>
-              <button onClick={() => setRemovingMember(null)} className="p-2 hover:bg-red-100 rounded-xl transition-colors">
+              <button
+                onClick={() => setRemovingMember(null)}
+                className="p-2 hover:bg-red-100 rounded-xl"
+              >
                 <X size={18} className="text-slate-400" />
               </button>
             </div>
-
-            {/* Body */}
             <div className="p-6 space-y-5">
               <p className="text-sm text-slate-600 leading-relaxed">
-                You are about to remove <span className="font-bold text-slate-900">{removingMember.full_name}</span> from this workspace.
-                All their task assignments will become unassigned.
+                You are about to remove{" "}
+                <span className="font-bold text-slate-900">
+                  {removingMember.full_name}
+                </span>{" "}
+                from this workspace. They will be moved to trash and can be
+                restored within 30 days.
               </p>
               <div className="space-y-2">
                 <label className="text-sm font-semibold text-slate-700">
-                  Type <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-red-600">{removingMember.full_name}</span> to confirm:
+                  Type{" "}
+                  <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-red-600">
+                    {removingMember.full_name}
+                  </span>{" "}
+                  to confirm:
                 </label>
                 <input
                   type="text"
@@ -622,24 +922,32 @@ export default function TeamDashboardPage() {
                 />
               </div>
               {removeError && (
-                <p className="text-sm text-red-600 bg-red-50 border border-red-200 px-4 py-2.5 rounded-xl">{removeError}</p>
+                <p className="text-sm text-red-600 bg-red-50 border border-red-200 px-4 py-2.5 rounded-xl">
+                  {removeError}
+                </p>
               )}
             </div>
-
-            {/* Footer */}
             <div className="px-6 pb-6 flex gap-3">
               <button
                 onClick={() => setRemovingMember(null)}
-                className="flex-1 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+                className="flex-1 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 hover:bg-slate-50"
               >
                 Cancel
               </button>
               <button
                 onClick={handleRemoveMember}
-                disabled={removeConfirmText !== removingMember.full_name || isRemoving}
-                className="flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-red-200 disabled:cursor-not-allowed text-white rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+                disabled={
+                  removeConfirmText !== removingMember.full_name || isRemoving
+                }
+                className="flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-red-200 disabled:cursor-not-allowed text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
               >
-                {isRemoving ? <><Loader2 size={15} className="animate-spin" /> Removing…</> : "Remove Member"}
+                {isRemoving ? (
+                  <>
+                    <Loader2 size={15} className="animate-spin" /> Removing…
+                  </>
+                ) : (
+                  "Remove Member"
+                )}
               </button>
             </div>
           </div>

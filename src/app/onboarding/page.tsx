@@ -31,6 +31,7 @@ function OnboardingForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const inviteCode = searchParams.get("invite");
+  const inviteRole = searchParams.get("role"); // "pm" | "member" | null
 
   const [step, setStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
@@ -148,7 +149,7 @@ function OnboardingForm() {
         setIsLoading(false);
       }
     } else {
-      const result = await joinWorkspace(joinWorkspaceId, profile);
+      const result = await joinWorkspace(joinWorkspaceId, profile, inviteRole || "member");
       if (result?.error) {
         setFinishError(result.error);
         setIsLoading(false);
@@ -295,11 +296,18 @@ function OnboardingForm() {
                     <div className="bg-slate-50 rounded-xl p-4 space-y-3 border border-slate-100">
                       <div className="flex items-center gap-3 text-sm text-slate-600">
                         <CheckCircle2 size={15} className="text-green-500 flex-shrink-0" />
-                        <span>You will join as a <strong>Worker</strong></span>
+                        {inviteRole === "pm" ? (
+                          <span>You will join as a <strong className="text-indigo-600">Project Manager</strong></span>
+                        ) : (
+                          <span>You will join as a <strong>Team Member</strong></span>
+                        )}
                       </div>
                       <div className="flex items-center gap-3 text-sm text-slate-600">
                         <CheckCircle2 size={15} className="text-green-500 flex-shrink-0" />
-                        <span>Contribute to projects &amp; tasks</span>
+                        {inviteRole === "pm"
+                          ? <span>Full access to projects, sprints &amp; team</span>
+                          : <span>Contribute to projects &amp; tasks</span>
+                        }
                       </div>
                     </div>
                   </>

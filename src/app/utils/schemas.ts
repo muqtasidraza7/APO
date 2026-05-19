@@ -27,22 +27,23 @@ export const projectDocumentSchema = z.object({
     title: z.string(),
     week: z.number(),
     deliverable: z.string(),
-  })).max(5).optional().describe("Up to 5 key milestones"),
+    success_criteria: z.string().optional().describe("Measurable success criterion for this milestone"),
+  })).max(8).optional().describe("Up to 8 key milestones with measurable success criteria"),
   risks: z.array(z.object({
     description: z.string(),
     severity: z.enum(["high", "medium", "low"]).catch("medium"),
     mitigation: z.string(),
-  })).max(4).optional().describe("Top 4 risks"),
-  required_skills: z.array(z.string()).max(8).optional(),
-  success_criteria: z.array(z.string()).max(4).optional().describe("Key success criteria as flat strings"),
-  constraints: z.array(z.string()).max(4).optional().describe("Key constraints as flat strings"),
-  assumptions: z.array(z.string()).max(4).optional(),
+  })).max(6).optional().describe("Top 6 risks with mitigations"),
+  required_skills: z.array(z.string()).max(10).optional(),
+  success_criteria: z.array(z.string()).max(6).optional().describe("Key project-level success criteria as flat strings"),
+  constraints: z.array(z.string()).max(5).optional().describe("Key constraints as flat strings"),
+  assumptions: z.array(z.string()).max(5).optional(),
 });
 
 export const taskAssignmentSchema = z.object({
   task_title: z.string().describe("Exact milestone title from list"),
-  assigned_to: z.string().describe("team-member-uuid"),
-  assigned_to_name: z.string().describe("Job title or name of the assigned person"),
+  assigned_to: z.array(z.string()).describe("Array of team-member-uuids (1–5 members)"),
+  assigned_to_names: z.array(z.string()).describe("Names/job titles of all assigned members in the same order as assigned_to"),
   reasoning: z.string().describe("Explain the assignment. If a pattern influenced this decision, cite it explicitly with the date and reason."),
   pattern_warning: z.string().nullable().describe("Brief warning text if a caution pattern applies, otherwise null"),
 });
@@ -53,7 +54,7 @@ export const smartAllocationSchema = z.object({
   assignments: z.array(z.object({
     task_name: z.string().describe("Exact milestone title"),
     week_number: z.number(),
-    worker_id: z.string().describe("UUID from team list"),
+    worker_ids: z.array(z.string()).describe("Array of UUIDs from team list (1–5 members)"),
     reasoning: z.string().describe("Explain the assignment. If a pattern influenced this decision, cite it explicitly."),
     dependency_risk_warning: z.string().optional().describe("If this assignment poses a risk due to dependencies or overloaded worker capacity, explain it here briefly. Otherwise leave empty."),
   })),

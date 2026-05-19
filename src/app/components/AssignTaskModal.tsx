@@ -42,6 +42,8 @@ interface Milestone {
     title: string;
     week?: number;
     deliverable?: string;
+    status?: string;
+    assigned_member_ids?: string[];
 }
 
 interface Project {
@@ -54,7 +56,9 @@ interface ExistingAssignment {
     id: string;
     task_title: string;
     project_name: string;
+    project_id: string;
     estimated_hours: number;
+    source: "activity" | "ai_data"; // where the assignment came from
 }
 
 interface AssignTaskModalProps {
@@ -108,7 +112,7 @@ export default function AssignTaskModal({ member, workspaceId, onClose, onSucces
         supabase.auth.getUser().then(({ data }) => {
             setCurrentUserId(data.user?.id ?? null);
         });
-        Promise.all([fetchProjects(), fetchExistingAssignments()]);
+        fetchProjects(); // chains into fetchExistingAssignments internally
     }, []);
 
     useEffect(() => {
@@ -126,31 +130,88 @@ export default function AssignTaskModal({ member, workspaceId, onClose, onSucces
             .map(p => ({
                 id: p.id,
                 name: p.name,
-                milestones: (p.ai_data?.milestones || []) as Milestone[],
+                // Preserve status and assigned_member_ids so Remove tab can use them
+                milestones: (p.ai_data?.milestones || []).map((m: any) => ({
+                    title: m.title,
+                    week: m.week,
+                    deliverable: m.deliverable,
+                    status: m.status || "pending",
+                    assigned_member_ids: m.assigned_member_ids || [],
+                })) as Milestone[],
             }))
             .filter(p => p.milestones.length > 0);
 
         setProjects(mapped);
         setLoading(false);
+        // Pass fresh list directly so fetchExistingAssignments has status info
+        await fetchExistingAssignments(mapped);
     };
 
-    const fetchExistingAssignments = async () => {
-        const { data } = await supabase
+    const fetchExistingAssignments = async (currentProjects?: Project[]) => {
+        const projectList = currentProjects || projects;
+
+        // Build milestone status map from project ai_data
+        // key: `${task_title}__${project_name}` → status
+        const milestoneStatusMap: Record<string, string> = {};
+        for (const p of projectList) {
+            for (const ms of p.milestones) {
+                milestoneStatusMap[`${ms.title}__${p.name}`] = ms.status || "pending";
+            }
+        }
+
+        // ── Source 1: team_activity rows ─────────────────────────────────────
+        const { data: activityData } = await supabase
             .from("team_activity")
-            .select("id, description, metadata")
+            .select("id, description, metadata, created_at")
             .eq("team_member_id", member.id)
-            .eq("activity_type", "task_assigned");
+            .eq("activity_type", "task_assigned")
+            .order("created_at", { ascending: false }); // newest first for dedup
 
-        const mapped: ExistingAssignment[] = (data || [])
-            .filter(r => r.metadata?.status !== "removed")
-            .map(r => ({
+        const seen = new Set<string>();
+        const merged: ExistingAssignment[] = [];
+
+        for (const r of activityData || []) {
+            if (r.metadata?.status === "removed") continue;
+            const title = r.metadata?.task_title || r.description;
+            const projName = r.metadata?.project_name || "Unknown project";
+            const projId = r.metadata?.project_id || "";
+            const key = `${title}__${projName}`;
+
+            // Skip completed milestones — nothing to remove
+            if (milestoneStatusMap[key] === "completed") continue;
+            if (seen.has(key)) continue; // dedup
+            seen.add(key);
+
+            merged.push({
                 id: r.id,
-                task_title: r.metadata?.task_title || r.description,
-                project_name: r.metadata?.project_name || "Unknown project",
+                task_title: title,
+                project_name: projName,
+                project_id: projId,
                 estimated_hours: r.metadata?.estimated_hours || 0,
-            }));
+                source: "activity",
+            });
+        }
 
-        setExistingAssignments(mapped);
+        // ── Source 2: ai_data.milestones[].assigned_member_ids ───────────────
+        for (const p of projectList) {
+            for (const ms of p.milestones) {
+                if (ms.status === "completed") continue; // skip done
+                if (!(ms.assigned_member_ids || []).includes(member.id)) continue;
+                const key = `${ms.title}__${p.name}`;
+                if (seen.has(key)) continue; // already in list from team_activity
+                seen.add(key);
+                merged.push({
+                    id: `aidata__${p.id}__${ms.title}`,
+                    task_title: ms.title,
+                    project_name: p.name,
+                    project_id: p.id,
+                    estimated_hours: 0,
+                    source: "ai_data",
+                });
+            }
+        }
+
+        setExistingAssignments(merged);
     };
 
     const skillMatchScore = (milestoneTitle: string): number => {
@@ -163,6 +224,14 @@ export default function AssignTaskModal({ member, workspaceId, onClose, onSucces
     const handleAssign = async () => {
         if (!selectedProject || !selectedMilestone) { setError("Please choose a project and milestone."); return; }
         if (isAtCapacity) { setError("This member is at full capacity. Remove a task first."); return; }
+
+        const alreadyAssigned = existingAssignments.some(
+            a => a.task_title === selectedMilestone.title && a.project_name === selectedProject.name
+        );
+        if (alreadyAssigned) {
+            setError(`"${selectedMilestone.title}" is already assigned to this member.`);
+            return;
+        }
 
         try {
             setSubmitting(true);
@@ -190,6 +259,7 @@ export default function AssignTaskModal({ member, workspaceId, onClose, onSucces
             if (actErr) throw actErr;
 
             setSuccess(true);
+            await fetchExistingAssignments(projects); // refresh list so new entry is visible
             setTimeout(() => {
                 onSuccess(selectedMilestone.title, selectedProject.name);
             }, 1300);
@@ -201,22 +271,46 @@ export default function AssignTaskModal({ member, workspaceId, onClose, onSucces
     };
 
     const handleRemove = async (assignmentId: string) => {
+        const assignment = existingAssignments.find(a => a.id === assignmentId);
+        if (!assignment) return;
         try {
             setRemovingId(assignmentId);
 
-            // Read current metadata first so we don't overwrite task_title / project_name etc.
-            const { data: existing } = await supabase
-                .from("team_activity")
-                .select("metadata")
-                .eq("id", assignmentId)
-                .single();
+            if (assignment.source === "ai_data") {
+                // Remove this member from ai_data.milestones[].assigned_member_ids
+                const project = projects.find(p => p.id === assignment.project_id);
+                const milestone = project?.milestones.find(m => m.title === assignment.task_title);
+                const currentIds: string[] = milestone?.assigned_member_ids || [];
+                const newIds = currentIds.filter(id => id !== member.id);
 
-            const { error: upErr } = await supabase
-                .from("team_activity")
-                .update({ metadata: { ...(existing?.metadata || {}), status: "removed" } })
-                .eq("id", assignmentId);
+                const res = await fetch("/api/projects/milestone-team", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        projectId: assignment.project_id,
+                        milestoneTitle: assignment.task_title,
+                        memberIds: newIds,
+                    }),
+                });
+                if (!res.ok) {
+                    const d = await res.json();
+                    throw new Error(d.error || "Failed to remove assignment");
+                }
+            } else {
+                // Mark the team_activity row as removed
+                const { data: existing } = await supabase
+                    .from("team_activity")
+                    .select("metadata")
+                    .eq("id", assignmentId)
+                    .single();
 
-            if (upErr) throw upErr;
+                const { error: upErr } = await supabase
+                    .from("team_activity")
+                    .update({ metadata: { ...(existing?.metadata || {}), status: "removed" } })
+                    .eq("id", assignmentId);
+
+                if (upErr) throw upErr;
+            }
 
             setExistingAssignments(prev => prev.filter(a => a.id !== assignmentId));
             setReportIssueFor(null);

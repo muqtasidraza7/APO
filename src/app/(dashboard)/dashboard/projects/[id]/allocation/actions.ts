@@ -1,13 +1,67 @@
 "use server";
 
 import { createClient } from "../../../../../utils/supabase/server";
+import { createAdminClient } from "../../../../../utils/supabase/admin";
+import { createNotification } from "../../../../../utils/notifications";
 import { getGroqModel } from "../../../../../utils/ai";
 import { smartAllocationSchema } from "../../../../../utils/schemas";
 import { PromptTemplate } from "@langchain/core/prompts";
 import { revalidatePath } from "next/cache";
 
-export async function runSmartAllocation(projectId: string) {
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+async function getCurrentAssignments(admin: ReturnType<typeof createAdminClient>, projectId: string) {
+  const { data } = await admin
+    .from("project_assignments")
+    .select("task_name, week_number, resource_id, match_reason")
+    .eq("project_id", projectId);
+  return data || [];
+}
+
+async function logHistory(
+  admin: ReturnType<typeof createAdminClient>,
+  projectId: string,
+  workspaceId: string,
+  userId: string,
+  performedByName: string,
+  action: string,
+  note: string | null,
+  before: any[],
+  after: any[]
+) {
+  try {
+    await admin.from("allocation_history").insert({
+      project_id: projectId,
+      workspace_id: workspaceId,
+      action,
+      note: note || null,
+      performed_by: userId,
+      performed_by_name: performedByName,
+      assignment_count: after.length,
+      assignments_before: before,
+      assignments_after: after,
+    });
+  } catch {
+    // Non-fatal
+  }
+}
+
+async function getPerformerName(supabase: Awaited<ReturnType<typeof createClient>>, userId: string, workspaceId: string) {
+  const { data: member } = await supabase
+    .from("team_members")
+    .select("full_name")
+    .eq("user_id", userId)
+    .eq("workspace_id", workspaceId)
+    .maybeSingle();
+  return member?.full_name || "Unknown";
+}
+
+// ── Run AI Allocation ─────────────────────────────────────────────────────────
+
+export async function runSmartAllocation(projectId: string, note?: string) {
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated" };
 
   const { data: project } = await supabase
     .from("projects")
@@ -21,7 +75,7 @@ export async function runSmartAllocation(projectId: string) {
 
   const { data: team, error: teamError } = await supabase
     .from("team_members")
-    .select("id, job_title, skills, capacity_hours_per_week, status, hourly_rate, performance_score")
+    .select("id, user_id, job_title, skills, capacity_hours_per_week, status, hourly_rate, performance_score")
     .eq("workspace_id", project.workspace_id);
 
   if (teamError) return { error: "Failed to fetch team members." };
@@ -29,55 +83,55 @@ export async function runSmartAllocation(projectId: string) {
     return { error: "No team members found. Please go to the Team page and add members before running allocation." };
   }
 
-  // Fetch current global workload (all assignments across workspace)
+  const userIds = team.map(m => m.user_id).filter(Boolean);
+  const { data: wsMembers } = userIds.length > 0
+    ? await supabase
+        .from("workspace_members")
+        .select("user_id, experience_level, years_of_experience")
+        .in("user_id", userIds)
+    : { data: [] };
+  const expByUserId: Record<string, any> = {};
+  for (const wm of wsMembers || []) {
+    if (wm.user_id) expByUserId[wm.user_id] = wm;
+  }
+
   const { data: globalAssignments } = await supabase
     .from("project_assignments")
     .select("resource_id, id");
-    
   const workloadMap: Record<string, number> = {};
-  globalAssignments?.forEach(a => {
-      if (a.resource_id) {
-          workloadMap[a.resource_id] = (workloadMap[a.resource_id] || 0) + 1;
-      }
+  (globalAssignments || []).forEach(a => {
+    if (a.resource_id) workloadMap[a.resource_id] = (workloadMap[a.resource_id] || 0) + 1;
   });
 
-  // Fetch all unresolved patterns for this workspace
   const { data: patterns } = await supabase
     .from("worker_patterns")
     .select("*")
     .eq("workspace_id", project.workspace_id)
     .eq("resolved", false);
 
-  // Build member lookup for names
   const memberMap: Record<string, string> = {};
-  for (const m of team) {
-      memberMap[m.id] = m.job_title || "Team Member";
-  }
+  for (const m of team) memberMap[m.id] = m.job_title || "Team Member";
 
-  // Separate patterns by type for the prompt
   const taskPatterns = (patterns || [])
-      .filter((p: any) => p.pattern_type === "task_incompatibility")
-      .map((p: any) => ({
-          worker_id: p.member_id,
-          worker_name: memberMap[p.member_id] || p.member_id,
-          task_type: p.task_type || "General",
-          task_title: p.task_title || null,
-          reason: p.reason,
-          severity: p.severity,
-          date: new Date(p.created_at).toLocaleDateString("en-GB"),
-      }));
+    .filter((p: any) => p.pattern_type === "task_incompatibility")
+    .map((p: any) => ({
+      worker_id: p.member_id,
+      worker_name: memberMap[p.member_id] || p.member_id,
+      task_type: p.task_type || "General",
+      reason: p.reason,
+      severity: p.severity,
+    }));
 
   const groupPatterns = (patterns || [])
-      .filter((p: any) => p.pattern_type === "group_conflict")
-      .map((p: any) => ({
-          worker_a_id: p.member_id_a,
-          worker_b_id: p.member_id_b,
-          worker_a_name: memberMap[p.member_id_a] || p.member_id_a,
-          worker_b_name: memberMap[p.member_id_b] || p.member_id_b,
-          reason: p.reason,
-          severity: p.severity,
-          date: new Date(p.created_at).toLocaleDateString("en-GB"),
-      }));
+    .filter((p: any) => p.pattern_type === "group_conflict")
+    .map((p: any) => ({
+      worker_a_id: p.member_id_a,
+      worker_b_id: p.member_id_b,
+      worker_a_name: memberMap[p.member_id_a] || p.member_id_a,
+      worker_b_name: memberMap[p.member_id_b] || p.member_id_b,
+      reason: p.reason,
+      severity: p.severity,
+    }));
 
   const milestones = project.ai_data.milestones || [];
   if (milestones.length === 0) {
@@ -85,24 +139,25 @@ export async function runSmartAllocation(projectId: string) {
   }
 
   const teamJson = JSON.stringify(
-    team.map(m => ({
-      id: m.id,
-      role: m.job_title || "Team Member",
-      skills: m.skills || [],
-      capacity_hours_per_week: m.capacity_hours_per_week || 40,
-      current_assigned_tasks: workloadMap[m.id] || 0,
-      status: m.status,
-      performance_score: m.performance_score ?? 100,
-    }))
+    team.map(m => {
+      const exp = m.user_id ? (expByUserId[m.user_id] || {}) : {};
+      return {
+        id: m.id,
+        role: m.job_title || "Team Member",
+        skills: m.skills || [],
+        capacity_hours_per_week: m.capacity_hours_per_week || 40,
+        current_assigned_tasks: workloadMap[m.id] || 0,
+        status: m.status,
+        performance_score: m.performance_score ?? 100,
+        experience_level: exp.experience_level || null,
+        years_of_experience: exp.years_of_experience ?? null,
+      };
+    })
   );
 
   const patternsSection = taskPatterns.length === 0 && groupPatterns.length === 0
-      ? "No patterns recorded — assign freely based on skills."
-      : `WORKER-TASK INCOMPATIBILITIES (avoid these combinations):
-${JSON.stringify(taskPatterns, null, 2)}
-
-GROUP CONFLICTS (do not co-assign these pairs to the same project):
-${JSON.stringify(groupPatterns, null, 2)}`;
+    ? "No patterns recorded — assign freely based on skills."
+    : `WORKER-TASK INCOMPATIBILITIES:\n${JSON.stringify(taskPatterns, null, 2)}\n\nGROUP CONFLICTS:\n${JSON.stringify(groupPatterns, null, 2)}`;
 
   const model = getGroqModel(0.1);
   const structuredModel = model.withStructuredOutput(smartAllocationSchema);
@@ -112,69 +167,88 @@ You are an expert Project Manager AI. Assign these PROJECT MILESTONES to the mos
 
 ASSIGNMENT RULES:
 1. Match based on skills and role relevance
-2. Distribute work fairly — don't assign everything to one person
-3. Each milestone needs exactly ONE assignee
+2. Distribute work fairly — no single member should appear in more than 40% of all milestone assignments
+3. Each milestone requires 1 to 5 team members — choose the right number based on scope
 4. Only use IDs from the TEAM list below
 5. CRITICAL: Do NOT assign a member to a task if a BLOCKER pattern exists for that worker-task combination
 6. For CAUTION patterns, you may still assign but MUST mention the pattern in the reasoning
 7. Prefer members with higher performance_score when skill match is equal
-8. Do NOT co-assign two members with a BLOCKER group_conflict to the same project milestones
-9. RISK ASSESSMENT: Consider the 'current_assigned_tasks' vs 'capacity_hours_per_week'. If you assign a task to someone who already has many tasks, output a 'dependency_risk_warning' explaining they might be a bottleneck.
+8. Do NOT co-assign two members with a BLOCKER group_conflict to the same milestone
+9. RISK ASSESSMENT: Consider 'current_assigned_tasks' vs 'capacity_hours_per_week'. If a member already has many tasks, output a 'dependency_risk_warning'.
+10. EXPERIENCE MATCHING:
+    - Junior (0-2 yrs): low-complexity tasks only
+    - Mid-Level (2-5 yrs): standard feature development
+    - Senior (5-8 yrs): complex, architectural milestones
+    - Lead (8+ yrs): high-impact, cross-team milestones
+    - Always mention experience match in reasoning.
 
 PROJECT: "{projectName}"
-
-MILESTONES: 
-{milestones}
-
-TEAM MEMBERS: 
-{teamJson}
-
-PATTERN MEMORY:
-{patternsSection}
+MILESTONES: {milestones}
+TEAM MEMBERS: {teamJson}
+PATTERN MEMORY: {patternsSection}
 `);
 
   try {
     const prompt = await promptTemplate.invoke({
       projectName: project.name,
       milestones: JSON.stringify(milestones),
-      teamJson: teamJson,
-      patternsSection: patternsSection,
+      teamJson,
+      patternsSection,
     });
 
     const result = await structuredModel.invoke(prompt);
-
     const validIds = new Set(team.map(m => m.id));
-    const validAssignments = (result.assignments || []).filter((a: any) => validIds.has(a.worker_id));
+    const validAssignments = (result.assignments || [])
+      .map((a: any) => ({
+        ...a,
+        worker_ids: (a.worker_ids as string[]).filter((id) => validIds.has(id)),
+      }))
+      .filter((a: any) => a.worker_ids.length > 0);
 
     if (validAssignments.length === 0) {
       return { error: "AI returned invalid assignments. Please try again." };
     }
 
+    const inserts = validAssignments.flatMap((a: any) =>
+      a.worker_ids.map((workerId: string) => ({
+        project_id: projectId,
+        resource_id: workerId,
+        task_name: a.task_name,
+        week_number: a.week_number,
+        match_reason: a.reasoning + (a.dependency_risk_warning ? `\n⚠️ Risk: ${a.dependency_risk_warning}` : ""),
+      }))
+    );
+
+    const admin = createAdminClient();
+    const before = await getCurrentAssignments(admin, projectId);
+    const performedByName = await getPerformerName(supabase, user.id, project.workspace_id);
+
     await supabase.from("project_assignments").delete().eq("project_id", projectId);
-
-    const inserts = validAssignments.map((a: any) => ({
-      project_id: projectId,
-      resource_id: a.worker_id,
-      task_name: a.task_name,
-      week_number: a.week_number,
-      match_reason: a.reasoning + (a.dependency_risk_warning ? `\n⚠️ Risk: ${a.dependency_risk_warning}` : ""),
-    }));
-
     const { error: insertError } = await supabase.from("project_assignments").insert(inserts);
     if (insertError) throw insertError;
 
+    const afterSnap = inserts.map(i => ({
+      task_name: i.task_name,
+      week_number: i.week_number,
+      resource_id: i.resource_id,
+      match_reason: i.match_reason,
+    }));
+
+    await logHistory(admin, projectId, project.workspace_id, user.id, performedByName,
+      "ai_run", note || null, before, afterSnap);
+
     revalidatePath(`/dashboard/projects/${projectId}/allocation`);
     return { success: true, assigned_count: inserts.length };
-
   } catch (err: any) {
     console.error("AI Allocation Error:", err);
     return { error: err.message };
   }
 }
 
+// ── Confirm (writes to team_activity) ────────────────────────────────────────
+
 export async function confirmAllocation(projectId: string) {
   const supabase = await createClient();
-
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: "Not authenticated" };
 
@@ -215,15 +289,273 @@ export async function confirmAllocation(projectId: string) {
   }));
 
   const { error: actErr } = await supabase.from("team_activity").insert(activities);
-  if (actErr) {
-    console.error("team_activity insert error:", actErr);
-    return { error: "Failed to update team workload: " + actErr.message };
+  if (actErr) return { error: "Failed to update team workload: " + actErr.message };
+
+  // Notify each unique assigned member (fire-and-forget)
+  const admin = createAdminClient();
+  const uniqueMemberIds = [...new Set(assignments.map((a: any) => a.resource_id))];
+  const { data: members } = await admin
+    .from("team_members")
+    .select("id, user_id")
+    .in("id", uniqueMemberIds);
+
+  for (const member of (members || [])) {
+    if (!member.user_id) continue;
+    const memberTasks = assignments
+      .filter((a: any) => a.resource_id === member.id)
+      .map((a: any) => a.task_name)
+      .join(", ");
+    createNotification({
+      userId: member.user_id,
+      type: "task_assigned",
+      title: "New milestone assignments",
+      body: `You were assigned to: ${memberTasks} in ${project.name}`,
+      link: `/dashboard/projects/${projectId}/allocation`,
+    });
   }
 
   revalidatePath(`/dashboard/projects/${projectId}/allocation`);
   revalidatePath("/dashboard/team");
   return { success: true, confirmed_count: activities.length };
 }
+
+// ── Undo last allocation ──────────────────────────────────────────────────────
+
+export async function undoAllocation(projectId: string) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated" };
+
+  const admin = createAdminClient();
+
+  // Find the most recent history entry that hasn't been undone
+  const { data: historyEntries } = await admin
+    .from("allocation_history")
+    .select("id, assignments_before, workspace_id, action")
+    .eq("project_id", projectId)
+    .neq("action", "undone")
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  const latest = historyEntries?.[0];
+  if (!latest) return { error: "No allocation history found to undo." };
+
+  const restoredRows = (latest.assignments_before as any[] || []).map((a: any) => ({
+    project_id: projectId,
+    resource_id: a.resource_id,
+    task_name: a.task_name,
+    week_number: a.week_number,
+    match_reason: a.match_reason || "Restored via undo",
+  }));
+
+  const currentBefore = await getCurrentAssignments(admin, projectId);
+  const performedByName = await getPerformerName(supabase, user.id, latest.workspace_id);
+
+  await admin.from("project_assignments").delete().eq("project_id", projectId);
+
+  if (restoredRows.length > 0) {
+    const { error: insertError } = await admin.from("project_assignments").insert(restoredRows);
+    if (insertError) return { error: "Failed to restore allocation: " + insertError.message };
+  }
+
+  await logHistory(admin, projectId, latest.workspace_id, user.id, performedByName,
+    "undone", `Undid: ${latest.action}`, currentBefore, restoredRows);
+
+  revalidatePath(`/dashboard/projects/${projectId}/allocation`);
+  return { success: true };
+}
+
+// ── Save current as named scenario ───────────────────────────────────────────
+
+export async function saveCurrentAsScenario(projectId: string, name: string, note?: string) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated" };
+
+  const admin = createAdminClient();
+  const { data: project } = await supabase
+    .from("projects")
+    .select("workspace_id")
+    .eq("id", projectId)
+    .single();
+
+  if (!project) return { error: "Project not found" };
+
+  const currentAssignments = await getCurrentAssignments(admin, projectId);
+  const performedByName = await getPerformerName(supabase, user.id, project.workspace_id);
+
+  const { error } = await admin.from("allocation_scenarios").insert({
+    project_id: projectId,
+    workspace_id: project.workspace_id,
+    name: name.trim() || "Unnamed Scenario",
+    source: "manual",
+    note: note || null,
+    created_by: user.id,
+    created_by_name: performedByName,
+    assignments: currentAssignments,
+  });
+
+  if (error) return { error: error.message };
+
+  revalidatePath(`/dashboard/projects/${projectId}/allocation`);
+  return { success: true };
+}
+
+// ── Activate a saved scenario ─────────────────────────────────────────────────
+
+export async function activateScenario(projectId: string, scenarioId: string, note?: string) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated" };
+
+  const admin = createAdminClient();
+  const { data: scenario } = await admin
+    .from("allocation_scenarios")
+    .select("assignments, workspace_id, name")
+    .eq("id", scenarioId)
+    .single();
+
+  if (!scenario) return { error: "Scenario not found" };
+
+  const before = await getCurrentAssignments(admin, projectId);
+  const performedByName = await getPerformerName(supabase, user.id, scenario.workspace_id);
+
+  const rows = (scenario.assignments as any[] || []).map((a: any) => ({
+    project_id: projectId,
+    resource_id: a.resource_id,
+    task_name: a.task_name,
+    week_number: a.week_number,
+    match_reason: a.match_reason || "Restored from scenario",
+  }));
+
+  await admin.from("project_assignments").delete().eq("project_id", projectId);
+
+  if (rows.length > 0) {
+    const { error: insertError } = await admin.from("project_assignments").insert(rows);
+    if (insertError) return { error: "Failed to activate scenario: " + insertError.message };
+  }
+
+  await logHistory(admin, projectId, scenario.workspace_id, user.id, performedByName,
+    "scenario_activated", note || `Activated: ${scenario.name}`, before, rows);
+
+  revalidatePath(`/dashboard/projects/${projectId}/allocation`);
+  return { success: true };
+}
+
+// ── Delete a scenario ─────────────────────────────────────────────────────────
+
+export async function deleteScenario(scenarioId: string, projectId: string) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated" };
+
+  const admin = createAdminClient();
+  const { error } = await admin.from("allocation_scenarios").delete().eq("id", scenarioId);
+  if (error) return { error: error.message };
+
+  revalidatePath(`/dashboard/projects/${projectId}/allocation`);
+  return { success: true };
+}
+
+// ── Manually update members for one milestone ─────────────────────────────────
+
+export async function updateMilestoneMembers(
+  projectId: string,
+  workspaceId: string,
+  milestoneTitle: string,
+  weekNumber: number,
+  memberIds: string[]
+) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated" };
+
+  const admin = createAdminClient();
+  const before = await getCurrentAssignments(admin, projectId);
+  const performedByName = await getPerformerName(supabase, user.id, workspaceId);
+
+  // Delete existing rows for this milestone
+  await admin
+    .from("project_assignments")
+    .delete()
+    .eq("project_id", projectId)
+    .eq("task_name", milestoneTitle);
+
+  const newRows = memberIds.map(memberId => ({
+    project_id: projectId,
+    resource_id: memberId,
+    task_name: milestoneTitle,
+    week_number: weekNumber,
+    match_reason: "Manually assigned",
+  }));
+
+  if (newRows.length > 0) {
+    const { error } = await admin.from("project_assignments").insert(newRows);
+    if (error) return { error: error.message };
+  }
+
+  // Rebuild full current after edit
+  const after = before
+    .filter(a => a.task_name !== milestoneTitle)
+    .concat(newRows.map(r => ({
+      task_name: r.task_name,
+      week_number: r.week_number,
+      resource_id: r.resource_id,
+      match_reason: r.match_reason,
+    })));
+
+  await logHistory(admin, projectId, workspaceId, user.id, performedByName,
+    "manual_edit", `Updated: ${milestoneTitle}`, before, after);
+
+  // Notify newly assigned members
+  if (memberIds.length > 0) {
+    const { data: project } = await supabase
+      .from("projects")
+      .select("name")
+      .eq("id", projectId)
+      .maybeSingle();
+    const { data: assignedMembers } = await admin
+      .from("team_members")
+      .select("id, user_id")
+      .in("id", memberIds);
+    for (const m of (assignedMembers || [])) {
+      if (m.user_id && m.user_id !== user.id) {
+        createNotification({
+          userId: m.user_id,
+          type: "task_assigned",
+          title: "Milestone assignment updated",
+          body: `You were manually assigned to "${milestoneTitle}"${project?.name ? ` in ${project.name}` : ""}`,
+          link: `/dashboard/projects/${projectId}/allocation`,
+        });
+      }
+    }
+  }
+
+  // Also update ai_data.milestones assigned_member_ids so sprints see the change
+  const { data: projectData } = await supabase
+    .from("projects")
+    .select("ai_data")
+    .eq("id", projectId)
+    .single();
+
+  if (projectData?.ai_data?.milestones) {
+    const updatedMilestones = (projectData.ai_data.milestones as any[]).map((m: any) => {
+      if ((m.title || "").trim().toLowerCase() === milestoneTitle.trim().toLowerCase()) {
+        return { ...m, assigned_member_ids: memberIds };
+      }
+      return m;
+    });
+    await supabase
+      .from("projects")
+      .update({ ai_data: { ...projectData.ai_data, milestones: updatedMilestones } })
+      .eq("id", projectId);
+  }
+
+  revalidatePath(`/dashboard/projects/${projectId}/allocation`);
+  return { success: true };
+}
+
+// ── Reject (discard pending AI run) ──────────────────────────────────────────
 
 export async function rejectAllocation(projectId: string) {
   const supabase = await createClient();
