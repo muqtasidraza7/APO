@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
   Loader2,
+  Cpu,
   FileText,
   CheckCircle2,
   Clock,
@@ -472,10 +473,12 @@ export default function ProjectDetailsPage() {
   // ── Loading ─────────────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-32">
-        <div className="flex flex-col items-center gap-3 text-slate-400">
-          <Loader2 size={28} className="animate-spin" />
-          <p className="text-sm font-medium">Loading project…</p>
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/30 animate-pulse">
+            <Cpu size={22} className="text-white" />
+          </div>
+          <p className="text-sm text-slate-400 font-medium">Loading project…</p>
         </div>
       </div>
     );

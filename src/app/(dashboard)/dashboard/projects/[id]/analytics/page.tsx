@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft, DollarSign, TrendingDown, TrendingUp,
-  AlertTriangle, Loader2, Users, Edit2, Check, X,
+  AlertTriangle, Loader2, Cpu, Users, Edit2, Check, X,
   Activity, Target, Zap, BarChart2, Shield, Clock,
   ArrowRight, Minus, Flame, Receipt, Plus, Trash2,
   ChevronDown, ChevronUp, History, Server, Wrench,
@@ -455,9 +455,13 @@ export default function AnalyticsPage() {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center h-64 text-indigo-500">
-        <Loader2 className="animate-spin mb-4" size={32} />
-        <p className="text-sm font-medium animate-pulse">Calculating Project Financials…</p>
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/30 animate-pulse">
+            <Cpu size={22} className="text-white" />
+          </div>
+          <p className="text-sm text-slate-400 font-medium">Calculating project financials…</p>
+        </div>
       </div>
     );
   }

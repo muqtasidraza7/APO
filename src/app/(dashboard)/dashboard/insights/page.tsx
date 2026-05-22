@@ -6,6 +6,7 @@ import {
   Brain,
   Send,
   Loader2,
+  Cpu,
   Sparkles,
   TrendingUp,
   Users,
@@ -151,7 +152,12 @@ export default function InsightsPage() {
   if (isAdmin === null) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 size={28} className="animate-spin text-indigo-500" />
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/30 animate-pulse">
+            <Cpu size={22} className="text-white" />
+          </div>
+          <p className="text-sm text-slate-400 font-medium">Loading insights…</p>
+        </div>
       </div>
     );
   }

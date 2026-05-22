@@ -7,6 +7,7 @@ import {
   Users,
   Filter,
   RefreshCw,
+  Cpu,
   CheckCircle2,
   Link as LinkIcon,
   ShieldAlert,
@@ -391,7 +392,12 @@ export default function TeamDashboardPage() {
   if (loading && !workspaceId) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <RefreshCw size={36} className="animate-spin text-violet-500" />
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/30 animate-pulse">
+            <Cpu size={22} className="text-white" />
+          </div>
+          <p className="text-sm text-slate-400 font-medium">Loading team…</p>
+        </div>
       </div>
     );
   }
@@ -655,7 +661,12 @@ export default function TeamDashboardPage() {
 
           {loading ? (
             <div className="flex justify-center py-12">
-              <RefreshCw size={32} className="animate-spin text-violet-400" />
+              <div className="flex flex-col items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/30 animate-pulse">
+                  <Cpu size={22} className="text-white" />
+                </div>
+                <p className="text-sm text-slate-400 font-medium">Loading team…</p>
+              </div>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

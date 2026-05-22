@@ -15,6 +15,7 @@ import {
   PlayCircle,
   X,
   Loader2,
+  Cpu,
   ArrowLeft,
   ListChecks,
   Flag,
@@ -480,8 +481,13 @@ export default function SprintsPage() {
 
   if (loading)
     return (
-      <div className="flex items-center justify-center min-h-[50vh]">
-        <Loader2 size={32} className="animate-spin text-indigo-500" />
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/30 animate-pulse">
+            <Cpu size={22} className="text-white" />
+          </div>
+          <p className="text-sm text-slate-400 font-medium">Loading sprints…</p>
+        </div>
       </div>
     );
 
