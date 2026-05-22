@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "crypto";
 import { createClient } from "../../utils/supabase/server";
 
 // POST /api/project-shares — create a share token (PM/owner only)
@@ -26,9 +27,12 @@ export async function POST(request: NextRequest) {
       ? new Date(Date.now() + expiresInDays * 86400000).toISOString()
       : null;
 
+    const token = randomUUID();
+
     const { data: share, error } = await supabase
       .from("project_shares")
       .insert({
+        token,
         project_id: projectId,
         workspace_id: workspaceId,
         created_by: user.id,

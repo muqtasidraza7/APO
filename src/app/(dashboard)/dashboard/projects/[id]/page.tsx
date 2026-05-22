@@ -151,6 +151,7 @@ export default function ProjectDetailsPage() {
   const [shareToken, setShareToken] = useState<string | null>(null);
   const [shareLoading, setShareLoading] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
+  const [shareError, setShareError] = useState<string | null>(null);
   const [projectTeam, setProjectTeam] = useState<any[]>([]);
   const [workspaceMembers, setWorkspaceMembers] = useState<
     { id: string; full_name: string; job_title: string }[]
@@ -187,6 +188,7 @@ export default function ProjectDetailsPage() {
   const handleGenerateShare = async () => {
     if (!project) return;
     setShareLoading(true);
+    setShareError(null);
     try {
       const res = await fetch("/api/project-shares", {
         method: "POST",
@@ -197,7 +199,13 @@ export default function ProjectDetailsPage() {
         }),
       });
       const json = await res.json();
-      if (res.ok) setShareToken(json.token);
+      if (res.ok) {
+        setShareToken(json.token);
+      } else {
+        setShareError(json.error || "Failed to generate share link.");
+      }
+    } catch {
+      setShareError("Network error — please try again.");
     } finally {
       setShareLoading(false);
     }
@@ -812,6 +820,9 @@ export default function ProjectDetailsPage() {
             Generate a read-only link for your client. The link shows project
             status, milestones, and team size — no sensitive data.
           </p>
+          {shareError && (
+            <p className="text-xs text-red-500 mb-3">{shareError}</p>
+          )}
           {shareToken ? (
             <div className="flex items-center gap-2">
               <input
