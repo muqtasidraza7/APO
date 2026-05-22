@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { NavigationLoader } from "./components/NavigationLoader";
 
 export const metadata: Metadata = {
   title: "APO - AI Project Officer",
@@ -13,7 +14,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body suppressHydrationWarning>{children}</body>
+      <body suppressHydrationWarning>
+        <NavigationLoader />
+        {children}
+      </body>
     </html>
   );
 }
