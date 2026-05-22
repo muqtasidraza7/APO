@@ -79,7 +79,6 @@ export async function POST(request: NextRequest) {
             .single();
 
         if (insertError) {
-            console.error("Insert error:", insertError);
             return NextResponse.json({ error: "Failed to add team member" }, { status: 500 });
         }
 
@@ -96,7 +95,6 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json({ success: true, member: newMember });
     } catch (error: any) {
-        console.error("Add team member error:", error);
         return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
     }
 }

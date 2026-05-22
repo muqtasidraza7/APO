@@ -1,56 +1,38 @@
 "use client";
 
 import { useState } from "react";
-import { Reply, Pin, PinOff, Download, FileText, Image as ImageIcon } from "lucide-react";
+import { Reply, Pin, PinOff, Download, FileText, MessageSquare } from "lucide-react";
 import type { EnrichedMessage } from "../types";
+import { formatTimestamp, getInitials, getAvatarColor } from "../lib";
 
-export interface MessageBubbleProps {
-  message: EnrichedMessage;
-  isCurrentUser: boolean;
-  onReply: (message: EnrichedMessage) => void;
-  onPin: (messageId: string) => void;
-}
-
-// Render content with @mention highlighting
-function renderContent(content: string) {
-  if (!content) return null;
-  const parts = content.split(/(@\S+)/g);
-  return parts.map((part, i) =>
-    part.startsWith("@") ? (
-      <span key={i} className="font-semibold text-indigo-300 bg-indigo-500/20 px-0.5 rounded">
-        {part}
-      </span>
-    ) : (
-      <span key={i}>{part}</span>
-    )
+function renderContent(content: string): React.ReactNode {
+  const parts = content.split(/(@\S+(?:\s\S+)?)/g);
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.startsWith("@") ? (
+          <span key={i} className="font-semibold text-indigo-600 bg-indigo-50 rounded px-0.5">
+            {part}
+          </span>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </>
   );
 }
 
-function renderContentLight(content: string) {
-  if (!content) return null;
-  const parts = content.split(/(@\S+)/g);
-  return parts.map((part, i) =>
-    part.startsWith("@") ? (
-      <span key={i} className="font-semibold text-indigo-600">
-        {part}
-      </span>
-    ) : (
-      <span key={i}>{part}</span>
-    )
-  );
-}
-
-function FileAttachment({ url, name, type, isCurrentUser }: { url: string; name: string | null; type: string | null; isCurrentUser: boolean }) {
+function FileAttachment({ url, name, type }: { url: string; name: string | null; type: string | null }) {
   const isImage = type?.startsWith("image/");
   const displayName = name || "Attachment";
 
   if (isImage) {
     return (
-      <a href={url} target="_blank" rel="noopener noreferrer" className="block mt-1.5">
+      <a href={url} target="_blank" rel="noopener noreferrer" className="block mt-2">
         <img
           src={url}
           alt={displayName}
-          className="max-w-[260px] max-h-[200px] rounded-xl object-cover border border-white/20 hover:opacity-90 transition-opacity"
+          className="max-w-[300px] max-h-[240px] rounded-xl object-cover border border-slate-200 hover:opacity-90 transition-opacity cursor-pointer"
         />
       </a>
     );
@@ -61,118 +43,161 @@ function FileAttachment({ url, name, type, isCurrentUser }: { url: string; name:
       href={url}
       target="_blank"
       rel="noopener noreferrer"
-      className={`flex items-center gap-2 mt-1.5 px-3 py-2 rounded-xl border text-xs font-medium transition-colors ${
-        isCurrentUser
-          ? "bg-white/15 border-white/20 text-white hover:bg-white/25"
-          : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
-      }`}
+      className="inline-flex items-center gap-2 mt-2 px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
     >
-      <FileText size={14} className="flex-shrink-0" />
-      <span className="truncate max-w-[180px]">{displayName}</span>
-      <Download size={12} className="flex-shrink-0 ml-auto" />
+      <FileText size={14} className="text-slate-500 flex-shrink-0" />
+      <span className="truncate max-w-[220px]">{displayName}</span>
+      <Download size={12} className="text-slate-400 flex-shrink-0 ml-auto" />
     </a>
   );
 }
 
-export default function MessageBubble({ message, isCurrentUser, onReply, onPin }: MessageBubbleProps) {
-  const [hovered, setHovered] = useState(false);
+export interface MessageBubbleProps {
+  message: EnrichedMessage;
+  currentUserId: string;
+  isFirstInGroup: boolean;
+  onReply: (message: EnrichedMessage) => void;
+  onPin: (messageId: string) => void;
+  onOpenThread: (message: EnrichedMessage) => void;
+}
 
-  const formatTime = (iso: string) => {
-    const d = new Date(iso);
-    return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
-  };
+export default function MessageBubble({
+  message,
+  currentUserId,
+  isFirstInGroup,
+  onReply,
+  onPin,
+  onOpenThread,
+}: MessageBubbleProps) {
+  const [hovered, setHovered] = useState(false);
+  const isCurrentUser = message.sender_id === currentUserId;
+  const avatarColor = getAvatarColor(message.sender_id);
+  const initials = getInitials(message.sender.full_name);
 
   return (
     <div
-      className={`flex ${isCurrentUser ? "flex-row-reverse" : "flex-row"} mb-1 group items-end gap-1`}
+      className="flex gap-3 px-4 py-0.5 hover:bg-slate-50/70 transition-colors relative"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      {/* Hover action bar */}
-      <div
-        className={`flex items-center gap-0.5 mb-0.5 transition-opacity ${
-          hovered ? "opacity-100" : "opacity-0"
-        } ${isCurrentUser ? "flex-row-reverse" : "flex-row"}`}
-      >
-        <button
-          onClick={() => onReply(message)}
-          title="Reply"
-          className="p-1.5 rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-indigo-600 hover:border-indigo-200 shadow-sm transition-colors"
-        >
-          <Reply size={12} />
-        </button>
-        <button
-          onClick={() => onPin(message.id)}
-          title={message.is_pinned ? "Unpin" : "Pin"}
-          className={`p-1.5 rounded-lg bg-white border shadow-sm transition-colors ${
-            message.is_pinned
-              ? "border-amber-300 text-amber-500 hover:text-amber-600"
-              : "border-slate-200 text-slate-400 hover:text-amber-500 hover:border-amber-200"
-          }`}
-        >
-          {message.is_pinned ? <PinOff size={12} /> : <Pin size={12} />}
-        </button>
-      </div>
-
-      {/* Bubble */}
-      <div className="max-w-[70%]">
-        {/* Reply preview */}
-        {message.reply_preview && (
+      {/* Avatar or timestamp spacer */}
+      <div className="w-9 flex-shrink-0 pt-0.5 flex items-start justify-center">
+        {isFirstInGroup ? (
           <div
-            className={`flex items-start gap-2 mb-1 px-2.5 py-1.5 rounded-xl text-xs border-l-2 ${
-              isCurrentUser
-                ? "bg-indigo-700/50 border-indigo-300/50 text-indigo-200"
-                : "bg-slate-100 border-slate-300 text-slate-500"
+            className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-xs font-bold flex-shrink-0 shadow-sm"
+            style={{ backgroundColor: avatarColor }}
+          >
+            {initials}
+          </div>
+        ) : (
+          <span
+            className={`text-[9px] text-slate-300 pt-1.5 transition-opacity ${
+              hovered ? "opacity-100" : "opacity-0"
             }`}
           >
-            <Reply size={10} className="flex-shrink-0 mt-0.5 opacity-60" />
-            <div className="min-w-0">
-              <span className="font-semibold mr-1 opacity-90">{message.reply_preview.sender_name}</span>
-              <span className="opacity-70 truncate block">{message.reply_preview.content.slice(0, 80)}{message.reply_preview.content.length > 80 ? "…" : ""}</span>
+            {formatTimestamp(message.created_at)}
+          </span>
+        )}
+      </div>
+
+      {/* Message content */}
+      <div className="flex-1 min-w-0">
+        {isFirstInGroup && (
+          <div className="flex items-baseline gap-2 mb-0.5">
+            <span className="text-sm font-bold text-slate-800">
+              {message.sender.full_name}
+            </span>
+            {isCurrentUser && (
+              <span className="text-[10px] text-slate-400 font-normal">(you)</span>
+            )}
+            <span className="text-[11px] text-slate-400">
+              {formatTimestamp(message.created_at)}
+            </span>
+            {message.is_pinned && (
+              <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">
+                <Pin size={7} /> Pinned
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Reply preview bar */}
+        {message.reply_preview && (
+          <div className="flex items-start gap-1.5 mb-1.5 pl-2.5 border-l-2 border-indigo-300 bg-indigo-50/40 rounded-r-lg py-1">
+            <div className="text-xs text-slate-500 leading-snug">
+              <span className="font-semibold text-indigo-700 mr-1">
+                {message.reply_preview.sender_name}:
+              </span>
+              <span>
+                {message.reply_preview.content.slice(0, 100)}
+                {message.reply_preview.content.length > 100 ? "…" : ""}
+              </span>
             </div>
           </div>
         )}
 
-        {/* Main bubble */}
-        <div
-          className={`px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap break-words relative ${
-            isCurrentUser
-              ? "bg-indigo-600 text-white rounded-tr-sm"
-              : "bg-white border border-slate-200 text-slate-700 rounded-tl-sm"
-          }`}
-        >
-          {/* Content */}
-          {message.content && (
+        {/* Message text */}
+        {message.content && (
+          <p className="text-sm text-slate-700 whitespace-pre-wrap break-words leading-relaxed">
+            {renderContent(message.content)}
+          </p>
+        )}
+
+        {/* File attachment */}
+        {message.file_url && (
+          <FileAttachment
+            url={message.file_url}
+            name={message.file_name}
+            type={message.file_type}
+          />
+        )}
+
+        {/* Thread reply count badge */}
+        {(message.thread_reply_count ?? 0) > 0 && (
+          <button
+            onClick={() => onOpenThread(message)}
+            className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-800 hover:underline font-medium transition-colors"
+          >
+            <MessageSquare size={12} className="flex-shrink-0" />
             <span>
-              {isCurrentUser ? renderContent(message.content) : renderContentLight(message.content)}
+              {message.thread_reply_count} {message.thread_reply_count === 1 ? "reply" : "replies"}
             </span>
-          )}
-
-          {/* File attachment */}
-          {message.file_url && (
-            <FileAttachment
-              url={message.file_url}
-              name={message.file_name}
-              type={message.file_type}
-              isCurrentUser={isCurrentUser}
-            />
-          )}
-
-          {/* Pin indicator */}
-          {message.is_pinned && (
-            <span className={`ml-1.5 inline-flex items-center gap-0.5 text-[9px] font-bold ${
-              isCurrentUser ? "text-amber-300" : "text-amber-500"
-            }`}>
-              <Pin size={8} />
-            </span>
-          )}
-        </div>
-
-        {/* Timestamp */}
-        <p className={`text-[10px] text-slate-400 mt-0.5 ${isCurrentUser ? "text-right" : "text-left"}`}>
-          {formatTime(message.created_at)}
-        </p>
+            <span className="text-slate-400 font-normal">→ View thread</span>
+          </button>
+        )}
       </div>
+
+      {/* Floating hover action toolbar */}
+      {hovered && (
+        <div className="absolute right-4 -top-4 flex items-center gap-0.5 bg-white border border-slate-200 rounded-xl shadow-lg px-1 py-1 z-10">
+          <button
+            onClick={() => onOpenThread(message)}
+            title="Reply in thread"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+          >
+            <MessageSquare size={14} />
+          </button>
+          <button
+            onClick={() => onReply(message)}
+            title="Reply in channel"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+          >
+            <Reply size={14} />
+          </button>
+          <div className="w-px h-4 bg-slate-100 mx-0.5" />
+          <button
+            onClick={() => onPin(message.id)}
+            title={message.is_pinned ? "Unpin" : "Pin"}
+            className={`p-1.5 rounded-lg transition-colors ${
+              message.is_pinned
+                ? "text-amber-500 hover:bg-amber-50"
+                : "text-slate-400 hover:text-amber-500 hover:bg-amber-50"
+            }`}
+          >
+            {message.is_pinned ? <PinOff size={14} /> : <Pin size={14} />}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

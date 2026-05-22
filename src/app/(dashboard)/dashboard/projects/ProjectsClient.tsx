@@ -47,6 +47,7 @@ interface Props {
   deletedProjects: DeletedProject[];
   workspace: { id: string; name: string; owner_id: string };
   isAdmin: boolean;
+  isMember?: boolean;
   stats: { total: number; active: number; completed: number; pending: number };
 }
 
@@ -365,7 +366,7 @@ function ProjectRow({
   );
 }
 
-export default function ProjectsClient({ projects, deletedProjects, workspace, isAdmin, stats }: Props) {
+export default function ProjectsClient({ projects, deletedProjects, workspace, isAdmin, isMember, stats }: Props) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterType>("all");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -431,6 +432,24 @@ export default function ProjectsClient({ projects, deletedProjects, workspace, i
           </Link>
         )}
       </div>
+
+      {/* Member empty state — shown when a member has no assigned projects */}
+      {isMember && projects.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-24 bg-white border border-slate-200 rounded-2xl shadow-sm text-center gap-4">
+          <div className="w-24 h-24 bg-indigo-50 border-2 border-dashed border-indigo-200 rounded-3xl flex items-center justify-center mx-auto">
+            <FolderOpen size={38} className="text-indigo-300" />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold text-slate-800 mb-2">No Projects Assigned Yet</h2>
+            <p className="text-slate-500 text-sm max-w-sm mx-auto leading-relaxed">
+              You haven&apos;t been assigned to any projects. Once your project manager assigns tasks to you, your projects will appear here.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl">
+            <span className="text-amber-600 text-xs font-semibold">⏳ Waiting for assignment from your project manager</span>
+          </div>
+        </div>
+      )}
 
       {/* Workspace Overview — segmented progress bar */}
       {stats.total > 0 && (

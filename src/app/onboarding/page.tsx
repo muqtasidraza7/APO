@@ -31,7 +31,7 @@ function OnboardingForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const inviteCode = searchParams.get("invite");
-  const inviteRole = searchParams.get("role"); // "pm" | "member" | null
+  const inviteRole = searchParams.get("role"); // "pm" | "member" | "client" | null
 
   const [step, setStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
@@ -39,6 +39,8 @@ function OnboardingForm() {
   const [workspaceMode, setWorkspaceMode] = useState<"create" | "join">(inviteCode ? "join" : "create");
   const [workspaceName, setWorkspaceName] = useState("");
   const [joinWorkspaceId, setJoinWorkspaceId] = useState(inviteCode || "");
+  // parsedRole tracks the role from either the URL params OR a pasted invite link
+  const [parsedRole, setParsedRole] = useState<string>(inviteRole || "member");
 
   const [cvFile, setCvFile] = useState<File | null>(null);
   const [isParsing, setIsParsing] = useState(false);
@@ -149,7 +151,7 @@ function OnboardingForm() {
         setIsLoading(false);
       }
     } else {
-      const result = await joinWorkspace(joinWorkspaceId, profile, inviteRole || "member");
+      const result = await joinWorkspace(joinWorkspaceId, profile, parsedRole);
       if (result?.error) {
         setFinishError(result.error);
         setIsLoading(false);
@@ -278,7 +280,9 @@ function OnboardingForm() {
                             try {
                               const url = new URL(val);
                               const invite = url.searchParams.get("invite");
+                              const role = url.searchParams.get("role");
                               setJoinWorkspaceId(invite ? invite.trim() : val);
+                              if (role) setParsedRole(role);
                             } catch {
                               setJoinWorkspaceId(val);
                             }
@@ -296,17 +300,21 @@ function OnboardingForm() {
                     <div className="bg-slate-50 rounded-xl p-4 space-y-3 border border-slate-100">
                       <div className="flex items-center gap-3 text-sm text-slate-600">
                         <CheckCircle2 size={15} className="text-green-500 flex-shrink-0" />
-                        {inviteRole === "pm" ? (
+                        {parsedRole === "pm" ? (
                           <span>You will join as a <strong className="text-indigo-600">Project Manager</strong></span>
+                        ) : parsedRole === "client" ? (
+                          <span>You will join as a <strong className="text-emerald-600">Client</strong></span>
                         ) : (
                           <span>You will join as a <strong>Team Member</strong></span>
                         )}
                       </div>
                       <div className="flex items-center gap-3 text-sm text-slate-600">
                         <CheckCircle2 size={15} className="text-green-500 flex-shrink-0" />
-                        {inviteRole === "pm"
+                        {parsedRole === "pm"
                           ? <span>Full access to projects, sprints &amp; team</span>
-                          : <span>Contribute to projects &amp; tasks</span>
+                          : parsedRole === "client"
+                            ? <span>Read-only view of your project portfolio</span>
+                            : <span>Contribute to projects &amp; tasks</span>
                         }
                       </div>
                     </div>

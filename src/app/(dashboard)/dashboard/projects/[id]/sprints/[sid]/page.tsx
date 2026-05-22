@@ -50,7 +50,7 @@ interface SprintTask {
 
 interface TaskDependency {
   id: string;
-  task_id: string;      // the BLOCKED task (cannot start)
+  task_id: string; // the BLOCKED task (cannot start)
   depends_on_id: string; // the BLOCKER (must finish first)
 }
 
@@ -106,8 +106,6 @@ const PRIORITY_CFG = {
   medium: { label: "Medium", cls: "bg-amber-100 text-amber-700" },
   low: { label: "Low", cls: "bg-slate-100 text-slate-600" },
 };
-
-const SP_OPTIONS = [1, 2, 3, 5, 8, 13];
 
 function getInitials(name: string): string {
   if (!name) return "?";
@@ -188,38 +186,49 @@ export default function SprintBoardPage() {
     }
     setSprint(sprintData);
 
-    const depsRes = await fetch(`/api/sprints/dependencies?sprint_id=${sprintId}`);
+    const depsRes = await fetch(
+      `/api/sprints/dependencies?sprint_id=${sprintId}`,
+    );
     if (depsRes.ok) {
       const depsData = await depsRes.json();
       setDependencies(depsData.dependencies || []);
     }
 
-    const [{ data: taskData }, { data: projectData }, membersRes] = await Promise.all([
-      supabase
-        .from("sprint_tasks")
-        .select("*")
-        .eq("sprint_id", sprintId)
-        .order("created_at", { ascending: true }),
-      supabase
-        .from("projects")
-        .select("ai_data")
-        .eq("id", sprintData.project_id)
-        .single(),
-      // Fetch team members + project assignments via server-side API (bypasses RLS)
-      fetch("/api/projects/members", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectId: sprintData.project_id,
-          workspaceId: sprintData.workspace_id,
-        }),
-      }).then(r => r.json()).catch(() => ({ members: [], projectAssignments: [] })),
-    ]);
+    const [{ data: taskData }, { data: projectData }, membersRes] =
+      await Promise.all([
+        supabase
+          .from("sprint_tasks")
+          .select("*")
+          .eq("sprint_id", sprintId)
+          .order("created_at", { ascending: true }),
+        supabase
+          .from("projects")
+          .select("ai_data")
+          .eq("id", sprintData.project_id)
+          .single(),
+        // Fetch team members + project assignments via server-side API (bypasses RLS)
+        fetch("/api/projects/members", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projectId: sprintData.project_id,
+            workspaceId: sprintData.workspace_id,
+          }),
+        })
+          .then((r) => r.json())
+          .catch(() => ({ members: [], projectAssignments: [] })),
+      ]);
 
-    const members: { id: string; full_name: string; job_title: string; user_id: string }[] =
-      Array.isArray(membersRes.members) ? membersRes.members : [];
+    const members: {
+      id: string;
+      full_name: string;
+      job_title: string;
+      user_id: string;
+    }[] = Array.isArray(membersRes.members) ? membersRes.members : [];
     const assignmentData: { task_name: string; resource_id: string }[] =
-      Array.isArray(membersRes.projectAssignments) ? membersRes.projectAssignments : [];
+      Array.isArray(membersRes.projectAssignments)
+        ? membersRes.projectAssignments
+        : [];
 
     // Enrich tasks in JS — no PostgREST FK join needed
     const enrichedTasks = (taskData || []).map((t: any) => ({
@@ -239,8 +248,17 @@ export default function SprintBoardPage() {
     } = await supabase.auth.getUser();
     if (user) {
       const [wsResult, memberResult] = await Promise.all([
-        supabase.from("workspaces").select("owner_id").eq("id", sprintData.workspace_id).single(),
-        supabase.from("workspace_members").select("role").eq("workspace_id", sprintData.workspace_id).eq("user_id", user.id).maybeSingle(),
+        supabase
+          .from("workspaces")
+          .select("owner_id")
+          .eq("id", sprintData.workspace_id)
+          .single(),
+        supabase
+          .from("workspace_members")
+          .select("role")
+          .eq("workspace_id", sprintData.workspace_id)
+          .eq("user_id", user.id)
+          .maybeSingle(),
       ]);
       const isOwner = wsResult.data?.owner_id === user.id;
       setIsAdmin(isOwner || memberResult.data?.role === "pm");
@@ -257,13 +275,27 @@ export default function SprintBoardPage() {
   }, [load]);
 
   useEffect(() => {
-    const handler = () => { setReassignTaskId(null); setDepPickerTaskId(null); };
+    const handler = () => {
+      setReassignTaskId(null);
+      setDepPickerTaskId(null);
+    };
     document.addEventListener("click", handler);
     return () => document.removeEventListener("click", handler);
   }, []);
 
   // Drag and Drop handlers
   const onDragStart = (e: React.DragEvent, taskId: string) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task || sprint?.status === "completed") {
+      e.preventDefault();
+      return;
+    }
+    const canDrag = isAdmin || (currentMemberId && task.assigned_to === currentMemberId);
+    if (!canDrag) {
+      e.preventDefault();
+      return;
+    }
+    
     setDragTaskId(taskId);
     e.dataTransfer.effectAllowed = "move";
   };
@@ -287,7 +319,9 @@ export default function SprintBoardPage() {
       const blockers = blockedMap.get(dragTaskId);
       if (blockers?.length) {
         setDragTaskId(null);
-        showToast(`🔒 Blocked by: ${blockers.map(b => b.blockerTitle).join(", ")}`);
+        showToast(
+          `🔒 Blocked by: ${blockers.map((b) => b.blockerTitle).join(", ")}`,
+        );
         return;
       }
     }
@@ -324,7 +358,7 @@ export default function SprintBoardPage() {
     // Check if sprint has milestone association
     if (!sprint.milestone_ids || sprint.milestone_ids.length === 0) {
       showToast(
-        "⚠️ This sprint is not linked to any milestone. Manually add tasks using 'New Task'."
+        "⚠️ This sprint is not linked to any milestone. Manually add tasks using 'New Task'.",
       );
       return;
     }
@@ -346,17 +380,17 @@ export default function SprintBoardPage() {
       return;
     }
     showToast(
-      `✨ AI added ${data.count} tasks to the backlog! (Phase ${data.phase}: ${data.phaseName})`
+      `✨ AI added ${data.count} tasks to the backlog! (Phase ${data.phase}: ${data.phaseName})`,
     );
     // Immediately show returned tasks, then reload for full enrichment
     if (data.tasks?.length) {
       const enriched = data.tasks.map((t: any) => ({
         ...t,
         assigned_member: t.assigned_to
-          ? (teamMembers.find(m => m.id === t.assigned_to) ?? null)
+          ? (teamMembers.find((m) => m.id === t.assigned_to) ?? null)
           : null,
       }));
-      setTasks(prev => [...prev, ...enriched]);
+      setTasks((prev) => [...prev, ...enriched]);
     }
     load();
   };
@@ -393,7 +427,7 @@ export default function SprintBoardPage() {
     const enrichedTask = {
       ...data.task,
       assigned_member: data.task.assigned_to
-        ? (teamMembers.find(m => m.id === data.task.assigned_to) ?? null)
+        ? (teamMembers.find((m) => m.id === data.task.assigned_to) ?? null)
         : null,
     };
     setTasks((prev) => [...prev, enrichedTask]);
@@ -453,7 +487,11 @@ export default function SprintBoardPage() {
               ...t,
               assigned_to: memberId,
               assigned_member: member
-                ? { id: member.id, full_name: member.full_name, job_title: member.job_title }
+                ? {
+                    id: member.id,
+                    full_name: member.full_name,
+                    job_title: member.job_title,
+                  }
                 : null,
             }
           : t,
@@ -467,14 +505,22 @@ export default function SprintBoardPage() {
       showToast("Failed to update assignment");
       load();
     } else {
-      showToast(memberId ? `Assigned to ${member?.full_name || "member"}` : "Assignment removed");
+      showToast(
+        memberId
+          ? `Assigned to ${member?.full_name || "member"}`
+          : "Assignment removed",
+      );
     }
   };
 
   const handleLogHours = async (taskId: string) => {
     const hrs = parseFloat(logHoursValue);
     if (isNaN(hrs) || hrs < 0) return;
-    setTasks((prev) => prev.map((t) => t.id === taskId ? { ...t, actual_hours: hrs === 0 ? null : hrs } : t));
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === taskId ? { ...t, actual_hours: hrs === 0 ? null : hrs } : t,
+      ),
+    );
     setLogHoursTaskId(null);
     setLogHoursValue("");
     const res = await fetch("/api/sprints/log-hours", {
@@ -499,7 +545,9 @@ export default function SprintBoardPage() {
       if (cur === targetId) return true;
       if (visited.has(cur)) continue;
       visited.add(cur);
-      dependencies.filter(d => d.depends_on_id === cur).forEach(d => queue.push(d.task_id));
+      dependencies
+        .filter((d) => d.depends_on_id === cur)
+        .forEach((d) => queue.push(d.task_id));
     }
     return false;
   };
@@ -509,25 +557,37 @@ export default function SprintBoardPage() {
     setDepPickerTaskId(null);
     // Optimistic
     const tempId = `temp-${Date.now()}`;
-    setDependencies(prev => [...prev, { id: tempId, task_id: taskId, depends_on_id: dependsOnId }]);
+    setDependencies((prev) => [
+      ...prev,
+      { id: tempId, task_id: taskId, depends_on_id: dependsOnId },
+    ]);
     const res = await fetch("/api/sprints/dependencies", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ taskId, dependsOnId, projectId, workspaceId: sprint.workspace_id }),
+      body: JSON.stringify({
+        taskId,
+        dependsOnId,
+        projectId,
+        workspaceId: sprint.workspace_id,
+      }),
     });
     const data = await res.json();
     if (!res.ok) {
-      setDependencies(prev => prev.filter(d => d.id !== tempId));
+      setDependencies((prev) => prev.filter((d) => d.id !== tempId));
       showToast(`Dependency error: ${data.error}`);
     } else {
-      setDependencies(prev => prev.map(d => d.id === tempId ? data.dependency : d));
+      setDependencies((prev) =>
+        prev.map((d) => (d.id === tempId ? data.dependency : d)),
+      );
       showToast("Dependency added");
     }
   };
 
   const handleRemoveDep = async (depId: string) => {
-    setDependencies(prev => prev.filter(d => d.id !== depId));
-    const res = await fetch(`/api/sprints/dependencies?id=${depId}`, { method: "DELETE" });
+    setDependencies((prev) => prev.filter((d) => d.id !== depId));
+    const res = await fetch(`/api/sprints/dependencies?id=${depId}`, {
+      method: "DELETE",
+    });
     if (!res.ok) {
       showToast("Failed to remove dependency");
       load();
@@ -555,29 +615,38 @@ export default function SprintBoardPage() {
   })();
 
   // ── Team member filtering ───────────────────────────────────────────────────
-  const isStandalone = !sprint.milestone_ids || sprint.milestone_ids.length === 0;
+  const isStandalone =
+    !sprint.milestone_ids || sprint.milestone_ids.length === 0;
   const linkedMilestoneTitle = !isStandalone ? sprint.milestone_ids![0] : null;
   const linkedMilestone = linkedMilestoneTitle
     ? (projectMilestones.find(
-        (m) => m.title.trim().toLowerCase() === linkedMilestoneTitle.trim().toLowerCase()
+        (m) =>
+          m.title.trim().toLowerCase() ===
+          linkedMilestoneTitle.trim().toLowerCase(),
       ) ?? null)
     : null;
 
   // IDs from project_assignments for this milestone (Team Allocation page)
-  const normalizedLinkedTitle = (linkedMilestoneTitle ?? "").trim().toLowerCase();
+  const normalizedLinkedTitle = (linkedMilestoneTitle ?? "")
+    .trim()
+    .toLowerCase();
   const allocationIds = !isStandalone
     ? projectAssignments
-        .filter(a => (a.task_name || "").trim().toLowerCase() === normalizedLinkedTitle)
-        .map(a => a.resource_id)
+        .filter(
+          (a) =>
+            (a.task_name || "").trim().toLowerCase() === normalizedLinkedTitle,
+        )
+        .map((a) => a.resource_id)
     : [];
   // IDs from ai_data.milestones (MilestoneList page) as fallback
   const milestoneIds = linkedMilestone?.assigned_member_ids ?? [];
   const combinedIds = new Set([...allocationIds, ...milestoneIds]);
 
   // Members scoped to this milestone (empty = milestone has no assignments yet)
-  const filteredTeamMembers = !isStandalone && combinedIds.size > 0
-    ? teamMembers.filter(m => combinedIds.has(m.id))
-    : [];
+  const filteredTeamMembers =
+    !isStandalone && combinedIds.size > 0
+      ? teamMembers.filter((m) => combinedIds.has(m.id))
+      : [];
 
   const milestoneHasTeam = isStandalone || combinedIds.size > 0;
 
@@ -585,20 +654,26 @@ export default function SprintBoardPage() {
   //   Milestone sprint → show ONLY members assigned to that milestone
   //   Standalone sprint → show ALL workspace members
   //   Milestone sprint with no assignments yet → fall back to all (so user can still assign)
-  const addTaskMembers: typeof teamMembers =
-    isStandalone
-      ? teamMembers
-      : filteredTeamMembers.length > 0
-        ? filteredTeamMembers
-        : teamMembers;
+  const addTaskMembers: typeof teamMembers = isStandalone
+    ? teamMembers
+    : filteredTeamMembers.length > 0
+      ? filteredTeamMembers
+      : teamMembers;
 
   // Calculate effort hours instead of story points
-  const totalHours = tasks.reduce((s, t) => s + (t.time_estimate_hours || 0), 0);
+  const totalHours = tasks.reduce(
+    (s, t) => s + (t.time_estimate_hours || 0),
+    0,
+  );
   const doneHours = tasks
     .filter((t) => t.status === "done")
     .reduce((s, t) => s + (t.time_estimate_hours || 0), 0);
-  const totalActualHours = tasks.reduce((s, t) => s + (t.actual_hours != null ? t.actual_hours : 0), 0);
-  const progressPct = totalHours > 0 ? Math.round((doneHours / totalHours) * 100) : 0;
+  const totalActualHours = tasks.reduce(
+    (s, t) => s + (t.actual_hours != null ? t.actual_hours : 0),
+    0,
+  );
+  const progressPct =
+    totalHours > 0 ? Math.round((doneHours / totalHours) * 100) : 0;
   const start = new Date(sprint.start_date);
   const end = new Date(sprint.end_date);
   const durationDays = Math.ceil(
@@ -615,13 +690,18 @@ export default function SprintBoardPage() {
     durationDays > 0 ? Math.round((daysElapsed / durationDays) * 100) : 0;
 
   // Per-task block status: taskId → [{depId, blockerTitle}] for unfinished blockers
-  const blockedMap = new Map<string, { depId: string; blockerTitle: string }[]>();
+  const blockedMap = new Map<
+    string,
+    { depId: string; blockerTitle: string }[]
+  >();
   for (const dep of dependencies) {
-    const blocker = tasks.find(t => t.id === dep.depends_on_id);
+    const blocker = tasks.find((t) => t.id === dep.depends_on_id);
     if (!blocker) continue;
     if (blocker.status === "done") continue; // dep satisfied
     if (!blockedMap.has(dep.task_id)) blockedMap.set(dep.task_id, []);
-    blockedMap.get(dep.task_id)!.push({ depId: dep.id, blockerTitle: blocker.title });
+    blockedMap
+      .get(dep.task_id)!
+      .push({ depId: dep.id, blockerTitle: blocker.title });
   }
 
   return (
@@ -698,7 +778,8 @@ export default function SprintBoardPage() {
                 )}
               </div>
               <span className="text-xs text-slate-400">
-                {sprintAssignees.length} member{sprintAssignees.length !== 1 ? "s" : ""} assigned
+                {sprintAssignees.length} member
+                {sprintAssignees.length !== 1 ? "s" : ""} assigned
               </span>
             </div>
           )}
@@ -717,7 +798,11 @@ export default function SprintBoardPage() {
                 <button
                   onClick={handleAIPopulate}
                   disabled={isAILoading || !milestoneHasTeam}
-                  title={!milestoneHasTeam ? "Assign team to this milestone first" : ""}
+                  title={
+                    !milestoneHasTeam
+                      ? "Assign team to this milestone first"
+                      : ""
+                  }
                   className="bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed py-2 px-4 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg shadow-violet-100 transition-all"
                 >
                   {isAILoading ? (
@@ -776,7 +861,10 @@ export default function SprintBoardPage() {
           },
           {
             label: totalActualHours > 0 ? "Actual / Est" : "Effort Hours",
-            value: totalActualHours > 0 ? `${totalActualHours}/${totalHours}h` : `${doneHours}/${totalHours}h`,
+            value:
+              totalActualHours > 0
+                ? `${totalActualHours}/${totalHours}h`
+                : `${doneHours}/${totalHours}h`,
             color: "text-indigo-600",
           },
           {
@@ -852,7 +940,9 @@ export default function SprintBoardPage() {
         <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
           <Flag size={15} className="text-slate-400 flex-shrink-0" />
           <p className="text-sm text-slate-500">
-            This is a <span className="font-semibold">standalone sprint</span> (not linked to any milestone). AI Populate is only available for milestone-linked sprints.
+            This is a <span className="font-semibold">standalone sprint</span>{" "}
+            (not linked to any milestone). AI Populate is only available for
+            milestone-linked sprints.
           </p>
         </div>
       )}
@@ -860,9 +950,13 @@ export default function SprintBoardPage() {
         <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
           <AlertTriangle size={15} className="text-amber-600 flex-shrink-0" />
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-amber-800">No team assigned to this milestone</p>
+            <p className="text-sm font-semibold text-amber-800">
+              No team assigned to this milestone
+            </p>
             <p className="text-xs text-amber-600 mt-0.5">
-              Assign members to <span className="font-semibold">{sprint.milestone_ids![0]}</span> on the project page before using AI Populate.
+              Assign members to{" "}
+              <span className="font-semibold">{sprint.milestone_ids![0]}</span>{" "}
+              on the project page before using AI Populate.
             </p>
           </div>
           <Link
@@ -880,7 +974,7 @@ export default function SprintBoardPage() {
           const colTasks = tasks.filter((t) => t.status === col.id);
           const colHours = colTasks.reduce(
             (s, t) => s + (t.time_estimate_hours || 0),
-            0
+            0,
           );
           return (
             <div
@@ -912,16 +1006,30 @@ export default function SprintBoardPage() {
                 {colTasks.map((task) => (
                   <div
                     key={task.id}
-                    draggable={sprint.status !== "completed" && (isAdmin || task.assigned_to === currentMemberId)}
+                    draggable={
+                      !!(sprint.status !== "completed" &&
+                      (isAdmin || (currentMemberId && task.assigned_to === currentMemberId)))
+                    }
                     onDragStart={(e) => onDragStart(e, task.id)}
-                    className={`bg-white rounded-xl border border-slate-200 p-4 shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md hover:border-indigo-200 transition-all select-none ${dragTaskId === task.id ? "opacity-50" : ""}`}
+                    className={`bg-white rounded-xl border border-slate-200 p-4 shadow-sm transition-all select-none ${
+                      sprint.status !== "completed" && (isAdmin || (currentMemberId && task.assigned_to === currentMemberId))
+                        ? "cursor-grab active:cursor-grabbing hover:shadow-md hover:border-indigo-200"
+                        : "cursor-not-allowed opacity-80"
+                    } ${dragTaskId === task.id ? "opacity-50" : ""}`}
                   >
                     {/* Blocked banner — shown at very top when task has unmet deps */}
                     {blockedMap.has(task.id) && (
                       <div className="flex items-center gap-1.5 mb-2 px-2 py-1 bg-amber-50 border border-amber-200 rounded-lg">
-                        <OctagonAlert size={11} className="text-amber-600 flex-shrink-0" />
+                        <OctagonAlert
+                          size={11}
+                          className="text-amber-600 flex-shrink-0"
+                        />
                         <span className="text-[10px] font-bold text-amber-700 truncate">
-                          BLOCKED — waiting on {blockedMap.get(task.id)!.map(b => b.blockerTitle).join(", ")}
+                          BLOCKED — waiting on{" "}
+                          {blockedMap
+                            .get(task.id)!
+                            .map((b) => b.blockerTitle)
+                            .join(", ")}
                         </span>
                       </div>
                     )}
@@ -960,7 +1068,10 @@ export default function SprintBoardPage() {
                           className="flex items-center gap-1.5"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <Timer size={11} className="text-emerald-500 flex-shrink-0" />
+                          <Timer
+                            size={11}
+                            className="text-emerald-500 flex-shrink-0"
+                          />
                           <input
                             autoFocus
                             type="number"
@@ -970,12 +1081,17 @@ export default function SprintBoardPage() {
                             onChange={(e) => setLogHoursValue(e.target.value)}
                             onKeyDown={(e) => {
                               if (e.key === "Enter") handleLogHours(task.id);
-                              if (e.key === "Escape") { setLogHoursTaskId(null); setLogHoursValue(""); }
+                              if (e.key === "Escape") {
+                                setLogHoursTaskId(null);
+                                setLogHoursValue("");
+                              }
                             }}
                             placeholder="0"
                             className="w-16 text-xs border border-slate-200 rounded-md px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-emerald-400"
                           />
-                          <span className="text-[10px] text-slate-400">hrs</span>
+                          <span className="text-[10px] text-slate-400">
+                            hrs
+                          </span>
                           <button
                             onClick={() => handleLogHours(task.id)}
                             className="p-0.5 text-emerald-600 hover:text-emerald-700"
@@ -983,7 +1099,10 @@ export default function SprintBoardPage() {
                             <Check size={12} />
                           </button>
                           <button
-                            onClick={() => { setLogHoursTaskId(null); setLogHoursValue(""); }}
+                            onClick={() => {
+                              setLogHoursTaskId(null);
+                              setLogHoursValue("");
+                            }}
                             className="p-0.5 text-slate-400 hover:text-slate-600"
                           >
                             <X size={12} />
@@ -994,97 +1113,129 @@ export default function SprintBoardPage() {
                           onClick={(e) => {
                             e.stopPropagation();
                             setLogHoursTaskId(task.id);
-                            setLogHoursValue(task.actual_hours != null ? String(task.actual_hours) : "");
+                            setLogHoursValue(
+                              task.actual_hours != null
+                                ? String(task.actual_hours)
+                                : "",
+                            );
                           }}
                           className="flex items-center gap-1.5 text-[11px] text-slate-400 hover:text-emerald-600 transition-colors"
                         >
                           <Timer size={11} />
-                          {task.actual_hours != null
-                            ? <span className="font-semibold text-emerald-600">{task.actual_hours}h logged</span>
-                            : <span>Log actual hours</span>
-                          }
+                          {task.actual_hours != null ? (
+                            <span className="font-semibold text-emerald-600">
+                              {task.actual_hours}h logged
+                            </span>
+                          ) : (
+                            <span>Log actual hours</span>
+                          )}
                           {task.time_estimate_hours && (
-                            <span className="text-slate-300">/ {task.time_estimate_hours}h est</span>
+                            <span className="text-slate-300">
+                              / {task.time_estimate_hours}h est
+                            </span>
                           )}
                         </button>
                       )}
                     </div>
 
                     {/* Dependencies section */}
-                    {sprint.status !== "completed" && (() => {
-                      const myBlockers = dependencies.filter(d => d.task_id === task.id);
-                      const blocking   = dependencies.filter(d => d.depends_on_id === task.id);
-                      const available  = tasks.filter(t =>
-                        t.id !== task.id &&
-                        !myBlockers.some(d => d.depends_on_id === t.id) &&
-                        !wouldCreateCycle(task.id, t.id)
-                      );
+                    {sprint.status !== "completed" &&
+                      (() => {
+                        const myBlockers = dependencies.filter(
+                          (d) => d.task_id === task.id,
+                        );
+                        const blocking = dependencies.filter(
+                          (d) => d.depends_on_id === task.id,
+                        );
+                        const available = tasks.filter(
+                          (t) =>
+                            t.id !== task.id &&
+                            !myBlockers.some((d) => d.depends_on_id === t.id) &&
+                            !wouldCreateCycle(task.id, t.id),
+                        );
 
-                      return (
-                        <div className="mt-2 pt-2 border-t border-slate-100 space-y-1.5">
-                          {/* Existing blockers as chips */}
-                          {myBlockers.length > 0 && (
-                            <div className="flex flex-wrap gap-1">
-                              {myBlockers.map(dep => {
-                                const blocker = tasks.find(t => t.id === dep.depends_on_id);
-                                if (!blocker) return null;
-                                return (
-                                  <span
-                                    key={dep.id}
-                                    className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-semibold border ${
-                                      blocker.status === "done"
-                                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                        : "bg-amber-50 text-amber-700 border-amber-200"
-                                    }`}
-                                  >
-                                    <Link2 size={8} className="flex-shrink-0" />
-                                    <span className="max-w-[80px] truncate">{blocker.title}</span>
-                                    {blocker.status === "done" && (
-                                      <CheckCircle2 size={8} className="text-emerald-500 flex-shrink-0" />
-                                    )}
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); handleRemoveDep(dep.id); }}
-                                      className="ml-0.5 hover:text-red-600 flex-shrink-0"
+                        return (
+                          <div className="mt-2 pt-2 border-t border-slate-100 space-y-1.5">
+                            {/* Existing blockers as chips */}
+                            {myBlockers.length > 0 && (
+                              <div className="flex flex-wrap gap-1">
+                                {myBlockers.map((dep) => {
+                                  const blocker = tasks.find(
+                                    (t) => t.id === dep.depends_on_id,
+                                  );
+                                  if (!blocker) return null;
+                                  return (
+                                    <span
+                                      key={dep.id}
+                                      className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-semibold border ${
+                                        blocker.status === "done"
+                                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                          : "bg-amber-50 text-amber-700 border-amber-200"
+                                      }`}
                                     >
-                                      <X size={8} />
-                                    </button>
-                                  </span>
-                                );
-                              })}
-                            </div>
-                          )}
+                                      <Link2
+                                        size={8}
+                                        className="flex-shrink-0"
+                                      />
+                                      <span className="max-w-[80px] truncate">
+                                        {blocker.title}
+                                      </span>
+                                      {blocker.status === "done" && (
+                                        <CheckCircle2
+                                          size={8}
+                                          className="text-emerald-500 flex-shrink-0"
+                                        />
+                                      )}
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleRemoveDep(dep.id);
+                                        }}
+                                        className="ml-0.5 hover:text-red-600 flex-shrink-0"
+                                      >
+                                        <X size={8} />
+                                      </button>
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            )}
 
-                          {/* "Blocking N tasks" note */}
-                          {blocking.length > 0 && (
-                            <p className="text-[10px] text-slate-400 flex items-center gap-0.5">
-                              <Link2Off size={9} />
-                              Blocking {blocking.length} task{blocking.length !== 1 ? "s" : ""}
-                            </p>
-                          )}
+                            {/* "Blocking N tasks" note */}
+                            {blocking.length > 0 && (
+                              <p className="text-[10px] text-slate-400 flex items-center gap-0.5">
+                                <Link2Off size={9} />
+                                Blocking {blocking.length} task
+                                {blocking.length !== 1 ? "s" : ""}
+                              </p>
+                            )}
 
-                          {/* Native select — no z-index / propagation issues */}
-                          {available.length > 0 && (
-                            <select
-                              value=""
-                              onClick={(e) => e.stopPropagation()}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                if (val) { e.stopPropagation(); handleAddDep(task.id, val); }
-                                e.target.value = "";
-                              }}
-                              className="w-full text-[11px] border border-slate-200 rounded-lg px-2 py-1 text-slate-500 bg-white cursor-pointer hover:border-indigo-300 focus:outline-none focus:ring-1 focus:ring-indigo-400"
-                            >
-                              <option value="">+ Add dependency…</option>
-                              {available.map(t => (
-                                <option key={t.id} value={t.id}>
-                                  {t.title} [{t.status.replace("_", " ")}]
-                                </option>
-                              ))}
-                            </select>
-                          )}
-                        </div>
-                      );
-                    })()}
+                            {/* Native select — no z-index / propagation issues */}
+                            {available.length > 0 && (
+                              <select
+                                value=""
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (val) {
+                                    e.stopPropagation();
+                                    handleAddDep(task.id, val);
+                                  }
+                                  e.target.value = "";
+                                }}
+                                className="w-full text-[11px] border border-slate-200 rounded-lg px-2 py-1 text-slate-500 bg-white cursor-pointer hover:border-indigo-300 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                              >
+                                <option value="">+ Add dependency…</option>
+                                {available.map((t) => (
+                                  <option key={t.id} value={t.id}>
+                                    {t.title} [{t.status.replace("_", " ")}]
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
+                        );
+                      })()}
 
                     {/* Assignee — click to reassign */}
                     <div className="relative mt-2 pt-2 border-t border-slate-100">
@@ -1092,26 +1243,37 @@ export default function SprintBoardPage() {
                         onClick={(e) => {
                           if (!isAdmin) return;
                           e.stopPropagation();
-                          setReassignTaskId((prev) => prev === task.id ? null : task.id);
+                          setReassignTaskId((prev) =>
+                            prev === task.id ? null : task.id,
+                          );
                         }}
                         className={`flex items-center gap-1.5 select-none transition-opacity ${isAdmin ? "cursor-pointer hover:opacity-75" : "cursor-default"}`}
                       >
                         {task.assigned_member ? (
                           <>
                             <div className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 text-[8px] font-bold flex items-center justify-center flex-shrink-0">
-                              {getInitials(task.assigned_member.full_name || task.assigned_member.job_title)}
+                              {getInitials(
+                                task.assigned_member.full_name ||
+                                  task.assigned_member.job_title,
+                              )}
                             </div>
                             <span className="text-xs text-slate-500 truncate flex-1 min-w-0">
-                              {task.assigned_member.full_name || task.assigned_member.job_title}
+                              {task.assigned_member.full_name ||
+                                task.assigned_member.job_title}
                             </span>
-                            <ChevronDown size={10} className="text-slate-300 flex-shrink-0" />
+                            <ChevronDown
+                              size={10}
+                              className="text-slate-300 flex-shrink-0"
+                            />
                           </>
                         ) : (
                           <>
                             <div className="w-5 h-5 rounded-full border-2 border-dashed border-slate-200 flex items-center justify-center flex-shrink-0">
                               <Plus size={8} className="text-slate-300" />
                             </div>
-                            <span className="text-xs text-slate-400">Assign</span>
+                            <span className="text-xs text-slate-400">
+                              Assign
+                            </span>
                           </>
                         )}
                       </div>
@@ -1129,11 +1291,20 @@ export default function SprintBoardPage() {
                             className={`w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-slate-50 transition-colors text-left ${!task.assigned_to ? "bg-slate-50" : ""}`}
                           >
                             <div className="w-5 h-5 rounded-full border border-dashed border-slate-300 flex-shrink-0" />
-                            <span className="text-slate-500 flex-1">Unassigned</span>
-                            {!task.assigned_to && <CheckCircle2 size={11} className="text-slate-400" />}
+                            <span className="text-slate-500 flex-1">
+                              Unassigned
+                            </span>
+                            {!task.assigned_to && (
+                              <CheckCircle2
+                                size={11}
+                                className="text-slate-400"
+                              />
+                            )}
                           </button>
                           {addTaskMembers.length === 0 && (
-                            <p className="px-3 py-2 text-xs text-slate-400 italic">No team members</p>
+                            <p className="px-3 py-2 text-xs text-slate-400 italic">
+                              No team members
+                            </p>
                           )}
                           {addTaskMembers.map((m) => (
                             <button
@@ -1145,11 +1316,18 @@ export default function SprintBoardPage() {
                                 {getInitials(m.full_name || m.job_title)}
                               </div>
                               <div className="min-w-0 flex-1">
-                                <div className="font-semibold text-slate-800 truncate">{m.full_name || m.job_title}</div>
-                                <div className="text-[10px] text-slate-400 truncate">{m.job_title}</div>
+                                <div className="font-semibold text-slate-800 truncate">
+                                  {m.full_name || m.job_title}
+                                </div>
+                                <div className="text-[10px] text-slate-400 truncate">
+                                  {m.job_title}
+                                </div>
                               </div>
                               {task.assigned_to === m.id && (
-                                <CheckCircle2 size={11} className="text-indigo-500 flex-shrink-0" />
+                                <CheckCircle2
+                                  size={11}
+                                  className="text-indigo-500 flex-shrink-0"
+                                />
                               )}
                             </button>
                           ))}
@@ -1288,7 +1466,9 @@ export default function SprintBoardPage() {
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-2">
                   Assign To
                   {!isStandalone && filteredTeamMembers.length > 0 && (
-                    <span className="ml-1.5 font-normal text-indigo-500 normal-case">— milestone team only</span>
+                    <span className="ml-1.5 font-normal text-indigo-500 normal-case">
+                      — milestone team only
+                    </span>
                   )}
                 </label>
                 {addTaskMembers.length > 0 ? (
@@ -1302,14 +1482,21 @@ export default function SprintBoardPage() {
                     <option value="">Unassigned</option>
                     {addTaskMembers.map((m) => (
                       <option key={m.id} value={m.id}>
-                        {m.full_name || m.job_title}{m.job_title ? ` (${m.job_title})` : ""}
+                        {m.full_name || m.job_title}
+                        {m.job_title ? ` (${m.job_title})` : ""}
                       </option>
                     ))}
                   </select>
                 ) : (
                   <p className="text-xs text-slate-400 italic px-1">
                     No team members found. Add members on the{" "}
-                    <a href="/dashboard/team" className="text-indigo-500 underline">Team page</a>.
+                    <a
+                      href="/dashboard/team"
+                      className="text-indigo-500 underline"
+                    >
+                      Team page
+                    </a>
+                    .
                   </p>
                 )}
               </div>

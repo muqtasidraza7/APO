@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
   Brain,
   Send,
@@ -12,7 +13,10 @@ import {
   Compass,
   RotateCcw,
   ChevronRight,
+  ShieldAlert,
+  ArrowLeft,
 } from "lucide-react";
+import Link from "next/link";
 import { createClient } from "../../../utils/supabase/client";
 
 interface Message {
@@ -59,7 +63,9 @@ const SUGGESTED: Record<Category, string[]> = {
 };
 
 export default function InsightsPage() {
+  const router = useRouter();
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null); // null = loading
   const [messages, setMessages] = useState<Message[]>([]);
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
@@ -75,15 +81,32 @@ export default function InsightsPage() {
       if (!user) return;
 
       const { data: member } = await supabase
-        .from("team_members")
-        .select("workspace_id")
+        .from("workspace_members")
+        .select("workspace_id, role")
         .eq("user_id", user.id)
         .maybeSingle();
 
-      if (member?.workspace_id) setWorkspaceId(member.workspace_id);
+      if (!member?.workspace_id) return;
+
+      // Check if admin (owner or PM)
+      const { data: ws } = await supabase
+        .from("workspaces")
+        .select("owner_id")
+        .eq("id", member.workspace_id)
+        .maybeSingle();
+
+      const adminFlag = ws?.owner_id === user.id || member.role === "pm";
+
+      if (!adminFlag) {
+        router.replace("/dashboard");
+        return;
+      }
+
+      setIsAdmin(true);
+      setWorkspaceId(member.workspace_id);
     };
     loadWorkspace();
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -123,6 +146,36 @@ export default function InsightsPage() {
 
   const suggested = SUGGESTED[activeCategory];
   const activeCat = CATEGORIES.find(c => c.id === activeCategory)!;
+
+  // Loading state while role is being determined
+  if (isAdmin === null) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Loader2 size={28} className="animate-spin text-indigo-500" />
+      </div>
+    );
+  }
+
+  // Access restricted for members
+  if (!isAdmin) {
+    return (
+      <div className="max-w-lg mx-auto py-20 text-center animate-in fade-in duration-500">
+        <div className="w-20 h-20 bg-amber-50 border-2 border-amber-200 rounded-3xl flex items-center justify-center mx-auto mb-6">
+          <ShieldAlert size={36} className="text-amber-500" />
+        </div>
+        <h1 className="text-2xl font-bold text-slate-900 mb-3">Access Restricted</h1>
+        <p className="text-slate-500 text-sm leading-relaxed mb-8 max-w-sm mx-auto">
+          AI Insights provides intelligence about team performance and assignments. This is an admin-only feature available to project managers and workspace owners.
+        </p>
+        <Link
+          href="/dashboard"
+          className="inline-flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white rounded-xl font-medium text-sm hover:bg-slate-800 transition-colors"
+        >
+          <ArrowLeft size={16} /> Back to Dashboard
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)] max-w-5xl mx-auto">

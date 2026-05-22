@@ -16,7 +16,6 @@ export async function POST(request: NextRequest) {
 
   const admin = createAdminClient();
 
-  // Fetch all base data in parallel
   const [
     { data: membersRaw, error: membersError },
     { data: projects },
@@ -24,6 +23,7 @@ export async function POST(request: NextRequest) {
     { data: sprintTasks },
     { data: patterns },
     { data: wsMembers },
+    { data: teamActivityRows },
   ] = await Promise.all([
     admin.from("team_members")
       .select("id, full_name, job_title, status, capacity_hours_per_week, skills, user_id, performance_score")
@@ -47,6 +47,10 @@ export async function POST(request: NextRequest) {
     admin.from("workspace_members")
       .select("user_id, experience_level, years_of_experience")
       .eq("workspace_id", workspaceId),
+    admin.from("team_activity")
+      .select("team_member_id, metadata")
+      .eq("workspace_id", workspaceId)
+      .eq("activity_type", "task_assigned"),
   ]);
 
   if (membersError) {
@@ -54,7 +58,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: membersError.message }, { status: 500 });
   }
 
-  // Build experience lookup keyed by user_id (from workspace_members)
   const expByUserId: Record<string, { experience_level: string | null; years_of_experience: number | null }> = {};
   for (const wm of wsMembers || []) {
     if (wm.user_id) expByUserId[wm.user_id] = {
@@ -63,8 +66,7 @@ export async function POST(request: NextRequest) {
     };
   }
 
-  // Inject optional columns with defaults so callers don't need to handle undefined
-  const members = (membersRaw || []).map((m: any) => {
+  let members = (membersRaw || []).map((m: any) => {
     const exp = m.user_id ? (expByUserId[m.user_id] || {}) : {};
     return {
       performance_score: 100,
@@ -76,10 +78,21 @@ export async function POST(request: NextRequest) {
     };
   });
 
+  // Deduplicate by user_id: keep first occurrence as canonical, remap duplicate IDs
+  const idRemap = new Map<string, string>(); // duplicateId → canonicalId
+  {
+    const seenByUserId = new Map<string, string>();
+    members = members.filter((m: any) => {
+      if (!m.user_id) return true;
+      const canon = seenByUserId.get(m.user_id);
+      if (!canon) { seenByUserId.set(m.user_id, m.id); return true; }
+      idRemap.set(m.id, canon);
+      return false;
+    });
+  }
+
   const projectIds = (projects || []).map((p) => p.id);
 
-  // project_assignments has no workspace_id — query by project ids
-  // Try with manually_completed columns; fall back to core columns if they don't exist yet
   let assignments: any[] = [];
   if (projectIds.length > 0) {
     const { data: aData, error: aErr } = await admin
@@ -97,14 +110,47 @@ export async function POST(request: NextRequest) {
         ...a,
         manually_completed: false,
         manually_completed_at: null,
+        estimated_hours: 0,
       }));
     } else {
-      assignments = aData || [];
+      assignments = (aData || []).map((a: any) => ({ ...a, estimated_hours: 0 }));
     }
   }
 
-  // Also synthesize assignments from ai_data.milestones[].assigned_member_ids
-  // (set by the MilestoneList UI — these don't create project_assignments rows)
+  // Remap any duplicate member IDs to the canonical ID
+  if (idRemap.size > 0) {
+    for (const a of assignments) {
+      const canonical = idRemap.get(a.resource_id);
+      if (canonical) a.resource_id = canonical;
+    }
+  }
+
+  // Reconcile with ai_data: syncAssignmentsToAiData is always called after every manual
+  // update, so ai_data.milestones[].assigned_member_ids is the canonical source of truth
+  // for who is currently assigned to each milestone. Filter out project_assignments rows
+  // where the milestone exists in ai_data but the member is no longer listed (stale rows
+  // that survived because the case-sensitive delete in updateMilestoneMembers missed them).
+  const aiAssignedSet = new Set<string>(); // "canonicalMemberId::projectId::normTitle"
+  const aiCoveredMs  = new Set<string>(); // "projectId::normTitle" (milestones tracked in ai_data)
+  for (const p of projects || []) {
+    for (const ms of (p.ai_data?.milestones || []) as any[]) {
+      const memberIds: string[] = ms.assigned_member_ids || [];
+      if (memberIds.length === 0) continue;
+      const msKey = `${p.id}::${norm(ms.title)}`;
+      aiCoveredMs.add(msKey);
+      for (const mid of memberIds) {
+        const canonical = idRemap.get(mid) ?? mid;
+        aiAssignedSet.add(`${canonical}::${p.id}::${norm(ms.title)}`);
+      }
+    }
+  }
+  assignments = assignments.filter((a: any) => {
+    const msKey = `${a.project_id}::${norm(a.task_name)}`;
+    if (!aiCoveredMs.has(msKey)) return true; // Not tracked in ai_data — keep
+    return aiAssignedSet.has(`${a.resource_id}::${a.project_id}::${norm(a.task_name)}`);
+  });
+
+  // Synthesize assignments from ai_data.milestones[].assigned_member_ids
   const memberIdSet = new Set(members.map((m: any) => m.id));
   for (const project of projects || []) {
     const aiMilestones: any[] = project.ai_data?.milestones || [];
@@ -124,16 +170,60 @@ export async function POST(request: NextRequest) {
             task_name: ms.title,
             manually_completed: false,
             manually_completed_at: null,
+            estimated_hours: ms.estimated_hours || 0,
           });
         }
       }
     }
   }
 
-  // ── Lookup maps ────────────────────────────────────────────────────────────
+  // Build a set of (project_id, normalized_task_name) pairs already covered by
+  // authoritative sources (project_assignments + ai_data). This prevents stale
+  // team_activity rows from ghosting milestones that were reassigned to someone else.
+  const authoritativePairs = new Set<string>(
+    assignments.map((a: any) => `${a.project_id}::${norm(a.task_name)}`)
+  );
+
+  // Synthesize from team_activity
+  const projectByName = new Map((projects || []).map((p) => [norm(p.name), p.id]));
+  const memberIdByTmId = new Map(members.map((m: any) => [m.id, m.id]));
+  for (const row of teamActivityRows || []) {
+    const meta = row.metadata || {};
+    if (meta.status === "removed") continue;
+    const tmId = row.team_member_id;
+    if (!memberIdByTmId.has(tmId)) continue;
+    const taskTitle = meta.task_title;
+    const projectId = meta.project_id || projectByName.get(norm(meta.project_name || ""));
+    if (!taskTitle || !projectId) continue;
+    // Skip if this (project, milestone) pair is already covered by project_assignments or ai_data —
+    // the team_activity row may be stale from a previous assignment.
+    if (authoritativePairs.has(`${projectId}::${norm(taskTitle)}`)) continue;
+    const alreadyIn = assignments.find(
+      (a: any) => a.resource_id === tmId && a.project_id === projectId && norm(a.task_name) === norm(taskTitle)
+    );
+    if (alreadyIn) {
+      if (!alreadyIn.estimated_hours && meta.estimated_hours) {
+        alreadyIn.estimated_hours = meta.estimated_hours;
+      }
+    } else {
+      assignments.push({
+        resource_id: tmId,
+        project_id: projectId,
+        task_name: taskTitle,
+        manually_completed: false,
+        manually_completed_at: null,
+        estimated_hours: meta.estimated_hours || 0,
+      });
+    }
+  }
+
+  // ── Lookup maps ──────────────────────────────────────────────────────────────
   const projectMap = new Map((projects || []).map((p) => [p.id, p]));
 
-  // Project start = earliest sprint start_date for the project, else created_at
+  // Sprint lookup by ID — used for accurate active/deferred classification
+  const sprintById = new Map((sprints || []).map((s) => [s.id, s]));
+
+  // Project start = earliest sprint start_date, fallback to created_at
   const projectStartMap = new Map<string, Date>();
   for (const p of projects || []) {
     const dates = (sprints || [])
@@ -145,23 +235,24 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Sprint tasks keyed by "memberId::projectId::normalizedMilestoneTitle"
+  // Sprint tasks grouped by "memberId::projectId::normalizedMilestoneTitle"
+  // Only include tasks from non-deleted sprints (sprints query already filters deleted_at = null)
+  const activeSprintIds = new Set((sprints || []).map((s: any) => s.id));
   const taskLookup = new Map<string, typeof sprintTasks>();
   for (const t of sprintTasks || []) {
     if (!t.assigned_to || !t.project_id || !t.parent_milestone_id) continue;
+    if (t.sprint_id && !activeSprintIds.has(t.sprint_id)) continue;
     const key = `${t.assigned_to}::${t.project_id}::${norm(t.parent_milestone_id)}`;
     if (!taskLookup.has(key)) taskLookup.set(key, []);
     taskLookup.get(key)!.push(t);
   }
 
-  // Assignments grouped by member
   const assignmentsByMember = new Map<string, typeof assignments>();
   for (const a of assignments || []) {
     if (!assignmentsByMember.has(a.resource_id)) assignmentsByMember.set(a.resource_id, []);
     assignmentsByMember.get(a.resource_id)!.push(a);
   }
 
-  // Patterns grouped by member
   const patternsByMember = new Map<string, any[]>();
   const addPattern = (memberId: string, p: any) => {
     if (!memberId) return;
@@ -177,11 +268,10 @@ export async function POST(request: NextRequest) {
   const TODAY = new Date();
   const WINDOW_END = new Date(TODAY.getTime() + 30 * 24 * 60 * 60 * 1000);
 
-  // ── Build rich member data ─────────────────────────────────────────────────
+  // ── Build rich member data ───────────────────────────────────────────────────
   const result = (members || []).map((member) => {
     const memberAssignments = assignmentsByMember.get(member.id) || [];
 
-    // Group member assignments by project
     const byProject = new Map<string, typeof memberAssignments>();
     for (const a of memberAssignments) {
       if (!byProject.has(a.project_id)) byProject.set(a.project_id, []);
@@ -207,30 +297,66 @@ export async function POST(request: NextRequest) {
         const aiMs = aiMilestones.find((m: any) => norm(m.title) === normTitle);
         const week = aiMs?.week ?? aiMs?.week_number ?? 0;
 
-        // Deadline = project start + week × 7 days
+        // Milestone deadline based on project start + week offset
         const deadline = new Date(projectStart.getTime() + week * 7 * 24 * 60 * 60 * 1000);
 
-        // Phase
-        let phase: "active" | "deferred" | "overdue";
-        if (deadline < TODAY) phase = "overdue";
-        else if (deadline <= WINDOW_END) phase = "active";
-        else phase = "deferred";
-
-        // Sprint tasks for this member/project/milestone
+        // Sprint tasks for this member / project / milestone
         const key = `${member.id}::${projectId}::${normTitle}`;
         const tasks = taskLookup.get(key) || [];
         const doneTasks = tasks.filter((t: any) => t.status === "done");
+        const nonDoneTasks = tasks.filter((t: any) => t.status !== "done");
+
         const autoCompleted = tasks.length > 0 && doneTasks.length === tasks.length;
         const manuallyCompleted = !!assignment.manually_completed;
         const isDone = autoCompleted || manuallyCompleted;
 
-        const remainingHours = tasks
-          .filter((t: any) => t.status !== "done")
-          .reduce((s: number, t: any) => s + (t.time_estimate_hours || 0), 0);
+        let remainingHours = 0;
+        let effectivePhase: "active" | "deferred" | "overdue";
+
+        if (tasks.length > 0) {
+          // Active load = sum of time estimates of incomplete sprint tasks
+          remainingHours = nonDoneTasks.reduce(
+            (s: number, t: any) => s + (t.time_estimate_hours || 0),
+            0
+          );
+
+          // Classify by the nearest sprint end date among incomplete tasks.
+          // This is more accurate than milestone deadlines because it respects
+          // the actual sprint schedule the PM has set up.
+          const sprintEndTimes = nonDoneTasks
+            .map((t: any) => {
+              const sprint = t.sprint_id ? sprintById.get(t.sprint_id) : null;
+              return sprint?.end_date ? new Date(sprint.end_date).getTime() : null;
+            })
+            .filter((d): d is number => d !== null);
+
+          if (sprintEndTimes.length > 0) {
+            const nearestEnd = new Date(Math.min(...sprintEndTimes));
+            effectivePhase = nearestEnd < TODAY
+              ? "overdue"
+              : nearestEnd <= WINDOW_END
+                ? "active"
+                : "deferred";
+          } else {
+            // No sprint info on tasks — fall back to milestone deadline
+            effectivePhase = deadline < TODAY ? "overdue" : deadline <= WINDOW_END ? "active" : "deferred";
+          }
+        } else {
+          // No sprint tasks created yet — classify by milestone deadline
+          effectivePhase = deadline < TODAY ? "overdue" : deadline <= WINDOW_END ? "active" : "deferred";
+          // Use estimated hours from ai_data or from the assignment record
+          remainingHours =
+            (aiMs?.estimated_hours as number | undefined) ||
+            assignment.estimated_hours ||
+            0;
+        }
 
         if (!isDone) {
-          if (phase === "active" || phase === "overdue") activeHours += remainingHours;
-          else deferredHours += remainingHours;
+          if (effectivePhase === "active" || effectivePhase === "overdue") {
+            activeHours += remainingHours;
+          } else {
+            deferredHours += remainingHours;
+          }
         }
 
         msTotal++;
@@ -242,8 +368,9 @@ export async function POST(request: NextRequest) {
           title: assignment.task_name,
           week,
           deadline: deadline.toISOString(),
-          phase: isDone ? ("done" as const) : phase,
+          phase: isDone ? ("done" as const) : effectivePhase,
           is_done: isDone,
+          actual_status: aiMs?.status || "pending",
           auto_completed: autoCompleted,
           manually_completed: manuallyCompleted,
           sprint_tasks_total: tasks.length,
@@ -262,7 +389,9 @@ export async function POST(request: NextRequest) {
     }).filter(Boolean);
 
     const capacityMonthly = (member.capacity_hours_per_week || 40) * 4;
-    const utilizationPct = capacityMonthly > 0 ? Math.round((activeHours / capacityMonthly) * 100) : 0;
+    const utilizationPct = capacityMonthly > 0
+      ? Math.round((activeHours / capacityMonthly) * 100)
+      : 0;
 
     return {
       ...member,

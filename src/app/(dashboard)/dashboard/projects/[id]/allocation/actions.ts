@@ -56,6 +56,44 @@ async function getPerformerName(supabase: Awaited<ReturnType<typeof createClient
   return member?.full_name || "Unknown";
 }
 
+// ── Sync Assignments to AI Data ────────────────────────────────────────────────
+async function syncAssignmentsToAiData(admin: ReturnType<typeof createAdminClient>, projectId: string) {
+  const { data: assignments } = await admin
+    .from("project_assignments")
+    .select("task_name, resource_id")
+    .eq("project_id", projectId);
+
+  if (!assignments) return;
+
+  const milestoneMembers: Record<string, string[]> = {};
+  assignments.forEach(a => {
+    const title = (a.task_name || "").trim().toLowerCase();
+    if (!milestoneMembers[title]) milestoneMembers[title] = [];
+    milestoneMembers[title].push(a.resource_id);
+  });
+
+  const { data: project } = await admin
+    .from("projects")
+    .select("ai_data")
+    .eq("id", projectId)
+    .single();
+
+  if (project?.ai_data?.milestones) {
+    const updatedMilestones = (project.ai_data.milestones as any[]).map((m: any) => {
+      const title = (m.title || "").trim().toLowerCase();
+      return {
+        ...m,
+        assigned_member_ids: milestoneMembers[title] || [],
+      };
+    });
+
+    await admin
+      .from("projects")
+      .update({ ai_data: { ...project.ai_data, milestones: updatedMilestones } })
+      .eq("id", projectId);
+  }
+}
+
 // ── Run AI Allocation ─────────────────────────────────────────────────────────
 
 export async function runSmartAllocation(projectId: string, note?: string) {
@@ -181,6 +219,9 @@ ASSIGNMENT RULES:
     - Senior (5-8 yrs): complex, architectural milestones
     - Lead (8+ yrs): high-impact, cross-team milestones
     - Always mention experience match in reasoning.
+11. NON-SELECTION RATIONALE (required in 'non_selection_notes'):
+    - If assigning 1 member: name 1–2 other team members who were considered but not chosen, and briefly state why (e.g., skill mismatch, overloaded, experience too junior, blocker pattern).
+    - If assigning 2+ members: briefly explain the group synergy — why THIS combination of members works well for this milestone specifically.
 
 PROJECT: "{projectName}"
 MILESTONES: {milestones}
@@ -215,7 +256,9 @@ PATTERN MEMORY: {patternsSection}
         resource_id: workerId,
         task_name: a.task_name,
         week_number: a.week_number,
-        match_reason: a.reasoning + (a.dependency_risk_warning ? `\n⚠️ Risk: ${a.dependency_risk_warning}` : ""),
+        match_reason: a.reasoning
+          + (a.non_selection_notes ? `\n\n${a.non_selection_notes}` : "")
+          + (a.dependency_risk_warning ? `\n\n⚠️ Risk: ${a.dependency_risk_warning}` : ""),
       }))
     );
 
@@ -314,8 +357,11 @@ export async function confirmAllocation(projectId: string) {
     });
   }
 
+  await syncAssignmentsToAiData(admin, projectId);
+
   revalidatePath(`/dashboard/projects/${projectId}/allocation`);
   revalidatePath("/dashboard/team");
+  revalidatePath(`/dashboard/projects/${projectId}/roadmap`);
   return { success: true, confirmed_count: activities.length };
 }
 
@@ -361,7 +407,11 @@ export async function undoAllocation(projectId: string) {
   await logHistory(admin, projectId, latest.workspace_id, user.id, performedByName,
     "undone", `Undid: ${latest.action}`, currentBefore, restoredRows);
 
+  await syncAssignmentsToAiData(admin, projectId);
+
   revalidatePath(`/dashboard/projects/${projectId}/allocation`);
+  revalidatePath("/dashboard/team");
+  revalidatePath(`/dashboard/projects/${projectId}/roadmap`);
   return { success: true };
 }
 
@@ -438,7 +488,11 @@ export async function activateScenario(projectId: string, scenarioId: string, no
   await logHistory(admin, projectId, scenario.workspace_id, user.id, performedByName,
     "scenario_activated", note || `Activated: ${scenario.name}`, before, rows);
 
+  await syncAssignmentsToAiData(admin, projectId);
+
   revalidatePath(`/dashboard/projects/${projectId}/allocation`);
+  revalidatePath("/dashboard/team");
+  revalidatePath(`/dashboard/projects/${projectId}/roadmap`);
   return { success: true };
 }
 
@@ -474,12 +528,15 @@ export async function updateMilestoneMembers(
   const before = await getCurrentAssignments(admin, projectId);
   const performedByName = await getPerformerName(supabase, user.id, workspaceId);
 
-  // Delete existing rows for this milestone
-  await admin
+  // Delete existing rows for this milestone (ilike = case-insensitive, handles AI casing mismatches)
+  const { data: toDelete } = await admin
     .from("project_assignments")
-    .delete()
+    .select("id")
     .eq("project_id", projectId)
-    .eq("task_name", milestoneTitle);
+    .ilike("task_name", milestoneTitle);
+  if (toDelete && toDelete.length > 0) {
+    await admin.from("project_assignments").delete().in("id", toDelete.map((r: any) => r.id));
+  }
 
   const newRows = memberIds.map(memberId => ({
     project_id: projectId,
@@ -531,27 +588,12 @@ export async function updateMilestoneMembers(
     }
   }
 
-  // Also update ai_data.milestones assigned_member_ids so sprints see the change
-  const { data: projectData } = await supabase
-    .from("projects")
-    .select("ai_data")
-    .eq("id", projectId)
-    .single();
 
-  if (projectData?.ai_data?.milestones) {
-    const updatedMilestones = (projectData.ai_data.milestones as any[]).map((m: any) => {
-      if ((m.title || "").trim().toLowerCase() === milestoneTitle.trim().toLowerCase()) {
-        return { ...m, assigned_member_ids: memberIds };
-      }
-      return m;
-    });
-    await supabase
-      .from("projects")
-      .update({ ai_data: { ...projectData.ai_data, milestones: updatedMilestones } })
-      .eq("id", projectId);
-  }
+  await syncAssignmentsToAiData(admin, projectId);
 
   revalidatePath(`/dashboard/projects/${projectId}/allocation`);
+  revalidatePath("/dashboard/team");
+  revalidatePath(`/dashboard/projects/${projectId}/roadmap`);
   return { success: true };
 }
 

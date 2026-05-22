@@ -8,11 +8,13 @@ export interface RawMessage {
   receiver_id: string | null;
   content: string;
   created_at: string;
-  reply_to_id: string | null;
+  reply_to_id?: string | null;
   is_pinned: boolean;
   file_url: string | null;
   file_name: string | null;
   file_type: string | null;
+  thread_root_id?: string | null;
+  thread_reply_count?: number;
 }
 
 export interface ReplyPreview {
@@ -56,4 +58,5 @@ export interface WorkspaceProject {
 export interface TeamMember {
   user_id: string;
   full_name: string;
+  avatar_url?: string | null;
 }

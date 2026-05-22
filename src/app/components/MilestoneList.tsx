@@ -473,17 +473,6 @@ export default function MilestoneList({
                       {/* Deliverable */}
                       <p className="text-sm text-slate-500 leading-relaxed mb-3">{milestone.deliverable}</p>
 
-                      {/* Success criteria */}
-                      {milestone.success_criteria && (
-                        <div className="flex items-start gap-2 bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2 mb-3">
-                          <CheckCircle2 size={13} className="text-emerald-500 flex-shrink-0 mt-0.5" />
-                          <p className="text-xs text-emerald-700 leading-snug">
-                            <span className="font-semibold">Success: </span>
-                            {milestone.success_criteria}
-                          </p>
-                        </div>
-                      )}
-
                       {/* Blocked callout */}
                       {status === "blocked" && (
                         <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl px-3 py-2 mb-3">

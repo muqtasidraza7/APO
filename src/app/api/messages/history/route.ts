@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "../../../utils/supabase/server";
+import { createAdminClient } from "../../../utils/supabase/admin";
 import { parseCursor } from "../../../utils/pagination";
 import type { EnrichedMessage } from "@/app/(dashboard)/dashboard/messages/types";
 
@@ -30,16 +31,20 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "workspaceId is required" }, { status: 400 });
     }
 
-    const { data: memberRow } = await supabase
-      .from("team_members").select("user_id")
-      .eq("user_id", user.id).eq("workspace_id", workspaceId)
+    // Use admin client to check workspace_members — the owner may not have a team_members row
+    const admin = createAdminClient();
+    const { data: memberRow } = await admin
+      .from("workspace_members")
+      .select("user_id")
+      .eq("user_id", user.id)
+      .eq("workspace_id", workspaceId)
       .maybeSingle();
     if (!memberRow) {
       return NextResponse.json({ error: "Forbidden: not a workspace member" }, { status: 403 });
     }
 
     if (projectId) {
-      const { data: projectRow } = await supabase
+      const { data: projectRow } = await admin
         .from("projects").select("id")
         .eq("id", projectId).eq("workspace_id", workspaceId)
         .maybeSingle();
@@ -48,8 +53,9 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Build base query
-    let query = supabase.from("messages").select("*").eq("workspace_id", workspaceId);
+    // Use admin client for message queries — bypasses messages table RLS which
+    // checks team_members membership (owner only exists in workspace_members).
+    let query = admin.from("messages").select("*").eq("workspace_id", workspaceId).is("thread_root_id", null);
     if (projectId) {
       query = query.eq("project_id", projectId);
     } else {
@@ -72,10 +78,11 @@ export async function GET(request: NextRequest) {
     let hasOlderMessages = false;
     if (messages && messages.length === limit) {
       const oldest = messages[messages.length - 1].created_at;
-      let olderQuery = supabase
+      let olderQuery = admin
         .from("messages")
         .select("id", { head: true, count: "exact" })
         .eq("workspace_id", workspaceId)
+        .is("thread_root_id", null)
         .lt("created_at", oldest);
       if (projectId) {
         olderQuery = olderQuery.eq("project_id", projectId);
@@ -97,15 +104,31 @@ export async function GET(request: NextRequest) {
     // Reverse so the UI receives chronological (ascending) order
     const chronological = [...messages].reverse();
 
-    // Batch-fetch all sender names
+    // Batch-fetch all sender names (admin client — owner may not have team_members row)
     const senderIds = [...new Set(chronological.map((m) => m.sender_id))];
-    const { data: senders } = await supabase
+    const { data: senders } = await admin
       .from("team_members").select("user_id, full_name")
       .eq("workspace_id", workspaceId).in("user_id", senderIds);
 
     const senderMap = new Map<string, string>(
       (senders ?? []).map((s) => [s.user_id, s.full_name])
     );
+
+    // For any sender not in team_members (e.g. workspace owner), resolve via auth metadata
+    const missingIds = senderIds.filter((id) => !senderMap.has(id));
+    if (missingIds.length > 0) {
+      await Promise.all(
+        missingIds.map(async (uid) => {
+          const { data: { user: authMeta } } = await admin.auth.admin.getUserById(uid);
+          const name =
+            (authMeta?.user_metadata?.full_name as string | undefined)?.trim() ||
+            (authMeta?.user_metadata?.name as string | undefined)?.trim() ||
+            authMeta?.email?.split("@")[0] ||
+            "Unknown Member";
+          senderMap.set(uid, name);
+        })
+      );
+    }
 
     const messageById = new Map(chronological.map((m) => [m.id, m]));
 
@@ -116,7 +139,7 @@ export async function GET(request: NextRequest) {
 
     let extraMessages: any[] = [];
     if (replyIds.length > 0) {
-      const { data: extras } = await supabase
+      const { data: extras } = await admin
         .from("messages").select("id, sender_id, content")
         .in("id", [...new Set(replyIds)]);
       extraMessages = extras ?? [];
@@ -143,6 +166,8 @@ export async function GET(request: NextRequest) {
         receiver_id: msg.receiver_id ?? null,
         project_id: msg.project_id ?? null,
         reply_to_id: msg.reply_to_id ?? null,
+        thread_root_id: msg.thread_root_id ?? null,
+        thread_reply_count: msg.thread_reply_count ?? 0,
         is_pinned: msg.is_pinned ?? false,
         file_url: msg.file_url ?? null,
         file_name: msg.file_name ?? null,

@@ -1,9 +1,7 @@
-
-
 "use client";
 
 import React from 'react';
-import { Users, TrendingUp, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Users, TrendingUp, AlertTriangle, CheckCircle2, Activity } from 'lucide-react';
 
 interface CapacityGaugeProps {
     totalMembers: number;
@@ -24,103 +22,96 @@ export default function CapacityGauge({
     balancedCount,
     underutilizedCount,
 }: CapacityGaugeProps) {
-    const getUtilizationColor = (percentage: number) => {
-        if (percentage >= 85) return 'from-red-500 to-orange-500';
-        if (percentage >= 70) return 'from-orange-500 to-yellow-500';
-        if (percentage >= 50) return 'from-green-500 to-emerald-500';
-        return 'from-blue-500 to-indigo-500';
+    const pct = Math.min(utilizationPercentage, 100);
+
+    const getBarColor = (p: number) => {
+        if (p >= 85) return 'bg-red-500';
+        if (p >= 70) return 'bg-orange-400';
+        if (p >= 50) return 'bg-emerald-500';
+        return 'bg-sky-500';
     };
 
-    const getUtilizationStatus = (percentage: number) => {
-        if (percentage >= 85) return { label: 'High Utilization', icon: AlertTriangle, color: 'text-red-600' };
-        if (percentage >= 70) return { label: 'Optimal', icon: CheckCircle2, color: 'text-green-600' };
-        return { label: 'Low Utilization', icon: TrendingUp, color: 'text-blue-600' };
+    const getStatusConfig = (p: number) => {
+        if (p >= 85) return { label: 'High Utilization', icon: AlertTriangle, color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-200' };
+        if (p >= 70) return { label: 'Optimal',          icon: CheckCircle2,  color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200' };
+        if (p >= 50) return { label: 'Balanced',         icon: CheckCircle2,  color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200' };
+        return             { label: 'Under-utilized',    icon: TrendingUp,    color: 'text-sky-600',     bg: 'bg-sky-50',     border: 'border-sky-200' };
     };
 
-    const status = getUtilizationStatus(utilizationPercentage);
-    const StatusIcon = status.icon;
+    const cfg = getStatusConfig(utilizationPercentage);
+    const StatusIcon = cfg.icon;
 
     return (
-        <div className="bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 border border-indigo-200 rounded-2xl p-6 shadow-sm">
-            
-            <div className="flex items-center justify-between mb-6">
-                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                    <Users size={20} className="text-indigo-600" />
-                    Team Capacity Dashboard
-                </h2>
-                <div className={`flex items-center gap-1 ${status.color} font-semibold text-sm`}>
-                    <StatusIcon size={16} />
-                    {status.label}
+        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+            {/* Top row: utilization bar */}
+            <div className="px-6 pt-5 pb-4 border-b border-slate-100">
+                <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                        <Activity size={16} className="text-violet-500" />
+                        <span className="text-sm font-bold text-slate-700">Team Utilization</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <span className="text-3xl font-black text-slate-900 tabular-nums leading-none">
+                            {utilizationPercentage.toFixed(0)}%
+                        </span>
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold border ${cfg.bg} ${cfg.border} ${cfg.color}`}>
+                            <StatusIcon size={11} />
+                            {cfg.label}
+                        </span>
+                    </div>
                 </div>
-            </div>
-
-            <div className="mb-6">
-                <div className="flex items-end justify-between mb-3">
-                    <span className="text-sm font-medium text-slate-600">Team Utilization</span>
-                    <span className="text-4xl font-bold text-indigo-700">
-                        {utilizationPercentage.toFixed(0)}%
-                    </span>
-                </div>
-
-                <div className="w-full bg-white rounded-full h-4 overflow-hidden border border-indigo-200 shadow-inner">
+                <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
                     <div
-                        className={`h-full bg-gradient-to-r ${getUtilizationColor(
-                            utilizationPercentage
-                        )} transition-all duration-700 ease-out`}
-                        style={{ width: `${Math.min(utilizationPercentage, 100)}%` }}
+                        className={`h-full rounded-full transition-all duration-700 ${getBarColor(utilizationPercentage)}`}
+                        style={{ width: `${pct}%` }}
                     />
                 </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-4 mb-4">
-                <div className="bg-white/70 backdrop-blur rounded-xl p-3 border border-indigo-100">
-                    <div className="text-xs text-slate-600 mb-1 flex items-center gap-1">
-                        <Users size={12} />
-                        Members
-                    </div>
-                    <div className="text-2xl font-bold text-slate-900">{totalMembers}</div>
+            {/* Bottom row: stat chips */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 divide-x divide-slate-100">
+                {/* Members */}
+                <div className="px-4 py-3 flex flex-col">
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1">
+                        <Users size={9} /> Members
+                    </span>
+                    <span className="text-xl font-black text-slate-900 tabular-nums">{totalMembers}</span>
                 </div>
 
-                <div className="bg-white/70 backdrop-blur rounded-xl p-3 border border-indigo-100">
-                    <div className="text-xs text-slate-600 mb-1">Active Tasks</div>
-                    <div className="text-2xl font-bold text-slate-900">{totalTasks}</div>
+                {/* Tasks */}
+                <div className="px-4 py-3 flex flex-col">
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">Active Tasks</span>
+                    <span className="text-xl font-black text-slate-900 tabular-nums">{totalTasks}</span>
                 </div>
 
-                <div className="bg-white/70 backdrop-blur rounded-xl p-3 border border-indigo-100">
-                    <div className="text-xs text-slate-600 mb-1">Available</div>
-                    <div className="text-2xl font-bold text-slate-900">{availableHours}h</div>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3">
-                <div className="bg-red-50 rounded-lg p-3 border border-red-200">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <div className="text-2xl font-bold text-red-700">{overloadedCount}</div>
-                            <div className="text-xs text-red-600 font-medium">Overloaded</div>
-                        </div>
-                        <AlertTriangle size={20} className="text-red-400" />
-                    </div>
+                {/* Capacity free */}
+                <div className="px-4 py-3 flex flex-col">
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">Capacity Free</span>
+                    <span className="text-xl font-black text-slate-900 tabular-nums">{availableHours}h</span>
                 </div>
 
-                <div className="bg-green-50 rounded-lg p-3 border border-green-200">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <div className="text-2xl font-bold text-green-700">{balancedCount}</div>
-                            <div className="text-xs text-green-600 font-medium">Balanced</div>
-                        </div>
-                        <CheckCircle2 size={20} className="text-green-400" />
-                    </div>
+                {/* Overloaded */}
+                <div className="px-4 py-3 flex flex-col">
+                    <span className="text-[10px] font-semibold text-red-400 uppercase tracking-widest mb-1 flex items-center gap-1">
+                        <AlertTriangle size={9} /> Overloaded
+                    </span>
+                    <span className="text-xl font-black text-red-600 tabular-nums">{overloadedCount}</span>
                 </div>
 
-                <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <div className="text-2xl font-bold text-blue-700">{underutilizedCount}</div>
-                            <div className="text-xs text-blue-600 font-medium">Available</div>
-                        </div>
-                        <TrendingUp size={20} className="text-blue-400" />
-                    </div>
+                {/* Balanced */}
+                <div className="px-4 py-3 flex flex-col">
+                    <span className="text-[10px] font-semibold text-emerald-500 uppercase tracking-widest mb-1 flex items-center gap-1">
+                        <CheckCircle2 size={9} /> Balanced
+                    </span>
+                    <span className="text-xl font-black text-emerald-600 tabular-nums">{balancedCount}</span>
+                </div>
+
+                {/* Available */}
+                <div className="px-4 py-3 flex flex-col">
+                    <span className="text-[10px] font-semibold text-sky-500 uppercase tracking-widest mb-1 flex items-center gap-1">
+                        <TrendingUp size={9} /> Available
+                    </span>
+                    <span className="text-xl font-black text-sky-600 tabular-nums">{underutilizedCount}</span>
                 </div>
             </div>
         </div>

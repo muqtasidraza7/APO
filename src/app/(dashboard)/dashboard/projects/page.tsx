@@ -56,6 +56,72 @@ export default async function ProjectsListPage() {
     ]);
 
   const isAdmin = workspace.owner_id === user.id || member?.role === "pm";
+  const isMember = !isAdmin && member?.role !== "client";
+
+  // ── Member-scoped project filtering ──────────────────────────────────────────
+  // Plain members only see projects where they are assigned via any of 3 sources:
+  // 1. project_assignments table (created by AssignTaskModal)
+  // 2. ai_data.milestones[].assigned_member_ids (set by MilestoneList/AI allocation)
+  // 3. team_activity rows with activity_type='task_assigned' (legacy & real-time)
+  let visibleProjectIds: Set<string> | null = null;
+
+  if (isMember) {
+    // Get this user's team_member record (the `id` used in assignments)
+    const { data: teamMemberRecord } = await supabase
+      .from("team_members")
+      .select("id")
+      .eq("workspace_id", workspace.id)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (teamMemberRecord) {
+      const tmId = teamMemberRecord.id;
+      visibleProjectIds = new Set<string>();
+
+      // Source 1: project_assignments table
+      const { data: projAssignments } = await supabase
+        .from("project_assignments")
+        .select("project_id")
+        .eq("resource_id", tmId);
+
+      (projAssignments || []).forEach((a) => {
+        if (a.project_id) visibleProjectIds!.add(a.project_id);
+      });
+
+      // Source 2: ai_data.milestones[].assigned_member_ids
+      // Already loaded in `projects` — scan directly
+      (projects || []).forEach((p) => {
+        const milestones: any[] = p.ai_data?.milestones || [];
+        const isAssigned = milestones.some((m: any) =>
+          (m.assigned_member_ids || []).includes(tmId)
+        );
+        if (isAssigned) visibleProjectIds!.add(p.id);
+      });
+
+      // Source 3: active team_activity milestone assignments
+      const { data: activityAssignments } = await supabase
+        .from("team_activity")
+        .select("metadata")
+        .eq("workspace_id", workspace.id)
+        .eq("team_member_id", tmId)
+        .eq("activity_type", "task_assigned");
+
+      (activityAssignments || []).forEach((row) => {
+        const meta = row.metadata || {};
+        if (meta.status !== "removed" && meta.project_id) {
+          visibleProjectIds!.add(meta.project_id);
+        }
+      });
+    } else {
+      // No team_member record yet — show nothing
+      visibleProjectIds = new Set<string>();
+    }
+  }
+
+  // Apply member filter if applicable
+  const filteredProjects = visibleProjectIds !== null
+    ? (projects || []).filter((p) => visibleProjectIds!.has(p.id))
+    : (projects || []);
 
   // Build sprint count per project
   const sprintsByProject = new Map<string, number>();
@@ -83,7 +149,7 @@ export default async function ProjectsListPage() {
   });
 
   // Enrich projects with computed fields
-  const enrichedProjects = (projects || []).map((p) => {
+  const enrichedProjects = filteredProjects.map((p) => {
     const milestones: any[] = p.ai_data?.milestones || [];
     const completedMilestones = milestones.filter((m: any) => m.status === "completed").length;
     const tasks = tasksByProject.get(p.id) || { total: 0, completed: 0 };
@@ -114,9 +180,10 @@ export default async function ProjectsListPage() {
   return (
     <ProjectsClient
       projects={enrichedProjects}
-      deletedProjects={(deletedProjects || []) as any[]}
+      deletedProjects={isAdmin ? ((deletedProjects || []) as any[]) : []}
       workspace={workspace}
       isAdmin={!!isAdmin}
+      isMember={isMember}
       stats={{ total, active, completed, pending }}
     />
   );

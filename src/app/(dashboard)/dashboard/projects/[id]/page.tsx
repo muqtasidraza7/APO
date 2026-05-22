@@ -146,15 +146,15 @@ export default function ProjectDetailsPage() {
   const [project, setProject] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [seedingTeam, setSeedingTeam] = useState(false);
-  const [seedMsg, setSeedMsg] = useState("");
   const [editingBlueprint, setEditingBlueprint] = useState(false);
   const [showSharePanel, setShowSharePanel] = useState(false);
   const [shareToken, setShareToken] = useState<string | null>(null);
   const [shareLoading, setShareLoading] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
   const [projectTeam, setProjectTeam] = useState<any[]>([]);
-  const [workspaceMembers, setWorkspaceMembers] = useState<{ id: string; full_name: string; job_title: string }[]>([]);
+  const [workspaceMembers, setWorkspaceMembers] = useState<
+    { id: string; full_name: string; job_title: string }[]
+  >([]);
   const [milestoneSprintStatuses, setMilestoneSprintStatuses] = useState<
     Record<
       number,
@@ -191,7 +191,10 @@ export default function ProjectDetailsPage() {
       const res = await fetch("/api/project-shares", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId: project.id, workspaceId: project.workspace_id }),
+        body: JSON.stringify({
+          projectId: project.id,
+          workspaceId: project.workspace_id,
+        }),
       });
       const json = await res.json();
       if (res.ok) setShareToken(json.token);
@@ -206,26 +209,6 @@ export default function ProjectDetailsPage() {
     navigator.clipboard.writeText(url);
     setShareCopied(true);
     setTimeout(() => setShareCopied(false), 2500);
-  };
-
-  const handleSeedTeam = async () => {
-    if (!project) return;
-    setSeedingTeam(true);
-    try {
-      const res = await fetch("/api/seed-team", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workspaceId: project.workspace_id, count: 7 }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error);
-      setSeedMsg(`✅ ${json.message}`);
-    } catch (err: any) {
-      setSeedMsg(`❌ ${err.message}`);
-    } finally {
-      setSeedingTeam(false);
-      setTimeout(() => setSeedMsg(""), 4000);
-    }
   };
 
   useEffect(() => {
@@ -269,7 +252,9 @@ export default function ProjectDetailsPage() {
           .eq("project_id", data.id),
       ]);
 
-      setIsAdmin(wsResult.data?.owner_id === user.id || memberResult.data?.role === "pm");
+      setIsAdmin(
+        wsResult.data?.owner_id === user.id || memberResult.data?.role === "pm",
+      );
 
       const sprintList: any[] = sprintsResult.data || [];
       const sprintIds = sprintList.map((s: any) => s.id);
@@ -285,8 +270,18 @@ export default function ProjectDetailsPage() {
           id: m.id,
           full_name: m.full_name || m.job_title || "",
           job_title: m.job_title || "",
-        }))
+        })),
       );
+
+      // ── Project assignments (AI allocation) — fetch regardless of sprints ──
+      const { data: allocations } = await supabase
+        .from("project_assignments")
+        .select("resource_id, task_name")
+        .eq("project_id", data.id);
+      const allocationMap = new Map<string, number>();
+      (allocations || []).forEach((a: any) => {
+        allocationMap.set(a.resource_id, (allocationMap.get(a.resource_id) || 0) + 1);
+      });
 
       if (sprintIds.length > 0) {
         const { data: tasks } = await supabase
@@ -294,13 +289,14 @@ export default function ProjectDetailsPage() {
           .select("id, assigned_to, status, sprint_id")
           .in("sprint_id", sprintIds);
 
-        // ── Team progress ──────────────────────────────────────────────────
+        // ── Team progress: union of sprint-task members + allocated members ──
         const enriched = (members || [])
           .map((m: any) => {
             const myTasks = (tasks || []).filter(
               (t: any) => t.assigned_to === m.id || t.assigned_to === m.user_id,
             );
-            if (myTasks.length === 0) return null;
+            const milestoneCount = allocationMap.get(m.id) || 0;
+            if (myTasks.length === 0 && milestoneCount === 0) return null;
             const done = myTasks.filter(
               (t: any) => t.status === "done" || t.status === "completed",
             ).length;
@@ -310,13 +306,15 @@ export default function ProjectDetailsPage() {
               parts.length > 1
                 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
                 : parts[0].substring(0, 2).toUpperCase();
+            const hasTasks = myTasks.length > 0;
             return {
               ...m,
               role,
               initials,
-              totalTasks: myTasks.length,
+              totalTasks: hasTasks ? myTasks.length : milestoneCount,
               completedTasks: done,
-              pct: Math.round((done / myTasks.length) * 100),
+              pct: hasTasks ? Math.round((done / myTasks.length) * 100) : 0,
+              fromAllocation: !hasTasks,
             };
           })
           .filter(Boolean);
@@ -384,6 +382,30 @@ export default function ProjectDetailsPage() {
           };
         });
         setMilestoneSprintStatuses(derived);
+      } else if (allocationMap.size > 0) {
+        // No sprints yet — build team list from AI allocations only
+        const enriched = (members || [])
+          .map((m: any) => {
+            const milestoneCount = allocationMap.get(m.id) || 0;
+            if (milestoneCount === 0) return null;
+            const role = m.job_title || "Team Member";
+            const parts = role.trim().split(/\s+/);
+            const initials =
+              parts.length > 1
+                ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+                : parts[0].substring(0, 2).toUpperCase();
+            return {
+              ...m,
+              role,
+              initials,
+              totalTasks: milestoneCount,
+              completedTasks: 0,
+              pct: 0,
+              fromAllocation: true,
+            };
+          })
+          .filter(Boolean);
+        setProjectTeam(enriched as any[]);
       }
 
       setLoading(false);
@@ -567,12 +589,14 @@ export default function ProjectDetailsPage() {
       border: "border-violet-100 hover:border-violet-300",
       bg: "hover:bg-violet-50/60",
       textColor: "text-violet-700",
+      adminOnly: true,
     },
     {
       href: `/dashboard/projects/${id}/roadmap`,
       icon: Calendar,
       label: "Mission Timeline",
-      description: "Visual milestone roadmap with sprints, teams and live progress tracking",
+      description:
+        "Visual milestone roadmap with sprints, teams and live progress tracking",
       iconBg: "bg-sky-600",
       glow: "shadow-sky-100",
       border: "border-sky-100 hover:border-sky-300",
@@ -583,7 +607,8 @@ export default function ProjectDetailsPage() {
       href: `/dashboard/projects/${id}/risk-radar`,
       icon: ShieldAlert,
       label: "AI Risk Radar",
-      description: "Real-time threat detection — burndown, overload, conflicts and deadline risks",
+      description:
+        "Real-time threat detection — burndown, overload, conflicts and deadline risks",
       iconBg: "bg-rose-600",
       glow: "shadow-rose-100",
       border: "border-rose-100 hover:border-rose-300",
@@ -605,7 +630,8 @@ export default function ProjectDetailsPage() {
       href: `/dashboard/projects/${id}/gantt`,
       icon: GanttChart,
       label: "Gantt Chart",
-      description: "Date-axis bar chart of all milestones and sprints in one view",
+      description:
+        "Date-axis bar chart of all milestones and sprints in one view",
       iconBg: "bg-amber-500",
       glow: "shadow-amber-100",
       border: "border-amber-100 hover:border-amber-300",
@@ -658,58 +684,33 @@ export default function ProjectDetailsPage() {
                 </span>
               )}
             </div>
+
             {isAdmin && (
-              <div className="flex items-center gap-2">
-                {seedMsg && (
-                  <span
-                    className={`text-xs font-medium px-3 py-1.5 rounded-lg border ${
-                      seedMsg.startsWith("✅")
-                        ? "bg-emerald-900/40 border-emerald-500/30 text-emerald-300"
-                        : "bg-red-900/40 border-red-500/30 text-red-300"
-                    }`}
-                  >
-                    {seedMsg}
-                  </span>
-                )}
-                <button
-                  onClick={() => setEditingBlueprint(true)}
-                  title="Edit project blueprint"
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/30 text-indigo-300 hover:text-indigo-200 rounded-xl text-xs font-semibold transition-all"
-                >
-                  <Pencil size={12} />
-                  Edit Blueprint
-                </button>
-                <button
-                  onClick={() => setShowSharePanel((v) => !v)}
-                  title="Share project with client"
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 hover:text-white/90 rounded-xl text-xs font-semibold transition-all"
-                >
-                  <Share2 size={12} />
-                  Share
-                </button>
-                <button
-                  onClick={handleSeedTeam}
-                  disabled={seedingTeam}
-                  title="Seed test team members"
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white/50 hover:text-white/80 rounded-xl text-xs font-semibold transition-all disabled:opacity-40"
-                >
-                  {seedingTeam ? (
-                    <Loader2 size={12} className="animate-spin" />
-                  ) : (
-                    <Users size={12} />
-                  )}
-                  {seedingTeam ? "Seeding…" : "Seed Team"}
-                </button>
-                <button
-                  onClick={() =>
-                    setProject({ ...project, ai_status: "parsing" })
-                  }
-                  title="Re-run AI analysis"
-                  className="p-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white/50 hover:text-white/80 rounded-xl transition-all"
-                >
-                  <RefreshCw size={15} />
-                </button>
-              </div>
+              <button
+                onClick={() => setEditingBlueprint(true)}
+                title="Edit project blueprint"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/30 text-indigo-300 hover:text-indigo-200 rounded-xl text-xs font-semibold transition-all"
+              >
+                <Pencil size={12} />
+                Edit Blueprint
+              </button>
+            )}
+            <button
+              onClick={() => setShowSharePanel((v) => !v)}
+              title="Share project with client"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 hover:text-white/90 rounded-xl text-xs font-semibold transition-all"
+            >
+              <Share2 size={12} />
+              Share
+            </button>
+            {isAdmin && (
+              <button
+                onClick={() => setProject({ ...project, ai_status: "parsing" })}
+                title="Re-run AI analysis"
+                className="p-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white/50 hover:text-white/80 rounded-xl transition-all"
+              >
+                <RefreshCw size={15} />
+              </button>
             )}
           </div>
 
@@ -796,14 +797,20 @@ export default function ProjectDetailsPage() {
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <Share2 size={16} className="text-indigo-500" />
-              <h3 className="text-sm font-bold text-slate-900">Share Project</h3>
+              <h3 className="text-sm font-bold text-slate-900">
+                Share Project
+              </h3>
             </div>
-            <button onClick={() => setShowSharePanel(false)} className="p-1 hover:bg-slate-100 rounded-lg transition-colors">
+            <button
+              onClick={() => setShowSharePanel(false)}
+              className="p-1 hover:bg-slate-100 rounded-lg transition-colors"
+            >
               <X size={15} className="text-slate-400" />
             </button>
           </div>
           <p className="text-xs text-slate-500 mb-4">
-            Generate a read-only link for your client. The link shows project status, milestones, and team size — no sensitive data.
+            Generate a read-only link for your client. The link shows project
+            status, milestones, and team size — no sensitive data.
           </p>
           {shareToken ? (
             <div className="flex items-center gap-2">
@@ -816,7 +823,15 @@ export default function ProjectDetailsPage() {
                 onClick={handleCopyShare}
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all flex-shrink-0 ${shareCopied ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-indigo-600 text-white hover:bg-indigo-700"}`}
               >
-                {shareCopied ? <><Check size={13} /> Copied!</> : <><Copy size={13} /> Copy</>}
+                {shareCopied ? (
+                  <>
+                    <Check size={13} /> Copied!
+                  </>
+                ) : (
+                  <>
+                    <Copy size={13} /> Copy
+                  </>
+                )}
               </button>
             </div>
           ) : (
@@ -825,7 +840,11 @@ export default function ProjectDetailsPage() {
               disabled={shareLoading}
               className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white rounded-xl text-xs font-bold transition-colors"
             >
-              {shareLoading ? <Loader2 size={13} className="animate-spin" /> : <Share2 size={13} />}
+              {shareLoading ? (
+                <Loader2 size={13} className="animate-spin" />
+              ) : (
+                <Share2 size={13} />
+              )}
               {shareLoading ? "Generating…" : "Generate Share Link"}
             </button>
           )}
@@ -839,7 +858,7 @@ export default function ProjectDetailsPage() {
 
       {/* ── PROJECT TOOLS ────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {projectTools.map((tool) => (
+        {projectTools.filter(tool => isAdmin || !tool.adminOnly).map((tool) => (
           <Link
             key={tool.href}
             href={tool.href}
@@ -1060,7 +1079,9 @@ export default function ProjectDetailsPage() {
                           />
                         </div>
                         <p className="text-[10px] text-slate-400 mt-0.5">
-                          {member.completedTasks}/{member.totalTasks} tasks done
+                          {member.fromAllocation
+                            ? `${member.totalTasks} milestone${member.totalTasks !== 1 ? "s" : ""} assigned`
+                            : `${member.completedTasks}/${member.totalTasks} tasks done`}
                         </p>
                       </div>
                     </div>

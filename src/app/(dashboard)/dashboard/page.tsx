@@ -1,8 +1,12 @@
 import { createClient } from "../../utils/supabase/server";
+import { createAdminClient } from "../../utils/supabase/admin";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Plus } from "lucide-react";
 import DashboardClient from "./DashboardClient";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -49,16 +53,17 @@ export default async function DashboardPage() {
     .order("created_at", { ascending: false })
     .limit(50);
 
-  // ── Sprints ───────────────────────────────────────────────────────────────
-  const { data: sprints } = await supabase
+  // ── Sprints — admin client bypasses RLS so team members see their sprints ──
+  const admin = createAdminClient();
+  const { data: sprints } = await admin
     .from("sprints")
     .select("*")
     .eq("workspace_id", workspace.id)
     .is("deleted_at", null)
     .order("end_date", { ascending: true });
 
-  // ── Sprint tasks ──────────────────────────────────────────────────────────
-  const { data: sprintTasks } = await supabase
+  // ── Sprint tasks — admin client ensures assigned tasks are always visible ──
+  const { data: sprintTasks } = await admin
     .from("sprint_tasks")
     .select("*")
     .eq("workspace_id", workspace.id)
@@ -129,15 +134,17 @@ export default async function DashboardPage() {
             Welcome back — here&apos;s what&apos;s happening in <span className="text-slate-600 font-semibold">{workspace.name}</span>.
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <Link
-            href="/dashboard/projects/new"
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white shadow-lg shadow-violet-200 transition-all hover:opacity-90"
-            style={{ background: "linear-gradient(135deg, #7C3AED, #4F46E5)" }}
-          >
-            <Plus size={16} /> New Project
-          </Link>
-        </div>
+        {userRole !== "member" && (
+          <div className="flex items-center gap-3">
+            <Link
+              href="/dashboard/projects/new"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white shadow-lg shadow-violet-200 transition-all hover:opacity-90"
+              style={{ background: "linear-gradient(135deg, #7C3AED, #4F46E5)" }}
+            >
+              <Plus size={16} /> New Project
+            </Link>
+          </div>
+        )}
       </div>
 
       <DashboardClient

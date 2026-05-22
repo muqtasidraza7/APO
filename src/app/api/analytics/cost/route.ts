@@ -78,6 +78,24 @@ export async function GET(request: NextRequest) {
     const memberMap: Record<string, any> = {};
     for (const m of teamMembers || []) memberMap[m.id] = m;
 
+    // ── Reconcile project_assignments with ai_data ─────────────────────────────
+    // ai_data.milestones[].assigned_member_ids is always synced after every allocation
+    // change, making it the canonical source for current member assignments.
+    // Filter out stale project_assignment rows (e.g., from failed case-sensitive deletes).
+    const aiAssignedSet = new Set<string>(); // "memberId::normTitle"
+    const aiCoveredMs  = new Set<string>(); // normTitle (milestones tracked in ai_data)
+    for (const ms of aiMilestones) {
+      const memberIds: string[] = ms.assigned_member_ids || [];
+      if (memberIds.length === 0) continue;
+      aiCoveredMs.add(norm(ms.title));
+      for (const mid of memberIds) aiAssignedSet.add(`${mid}::${norm(ms.title)}`);
+    }
+    const reconciledAssignments = (assignments || []).filter((a: any) => {
+      const nt = norm(a.task_name);
+      if (!aiCoveredMs.has(nt)) return true; // Not in ai_data — keep
+      return aiAssignedSet.has(`${a.resource_id}::${nt}`);
+    });
+
     // ── Estimated cost from allocations ──────────────────────────────────────────
     let totalCalculatedCost = 0;
     let totalEstimatedHours = 0;
@@ -99,7 +117,7 @@ export async function GET(request: NextRequest) {
     }
 
     const coveredTitles = new Set<string>();
-    for (const a of assignments || []) {
+    for (const a of reconciledAssignments) {
       const member = memberMap[a.resource_id];
       const rate = member?.hourly_rate || 50;
       const hrs = 20;
@@ -192,6 +210,10 @@ export async function GET(request: NextRequest) {
       const actualCost = td.hasSome ? Math.round(td.actualHours * rate) : null;
       const actualHours = td.hasSome ? td.actualHours : null;
 
+      const assignedMembers = assignedIds
+        .map((id: string) => memberMap[id]?.full_name || memberMap[id]?.job_title || null)
+        .filter(Boolean) as string[];
+
       return {
         title,
         week: ms.week || ms.week_number || 0,
@@ -201,6 +223,7 @@ export async function GET(request: NextRequest) {
         estCost,
         actualCost,
         variance: actualCost !== null ? actualCost - estCost : null,
+        assignedMembers,
       };
     }).filter((m: any) => m.title && m.estHours > 0);
 

@@ -4,8 +4,7 @@ import { createAdminClient } from "../../../utils/supabase/admin";
 
 export const runtime = "nodejs";
 
-// DELETE /api/sprints/manage?id=<sprintId>  — soft-delete a sprint
-// Only planning-status sprints may be deleted (active/completed hold real data).
+// DELETE /api/sprints/manage?id=<sprintId>  — soft-delete a sprint (any status)
 export async function DELETE(request: NextRequest) {
   try {
     const supabase = await createClient();
@@ -25,24 +24,27 @@ export async function DELETE(request: NextRequest) {
 
     if (!sprint) return NextResponse.json({ error: "Sprint not found" }, { status: 404 });
     if (sprint.deleted_at) return NextResponse.json({ error: "Sprint already deleted" }, { status: 409 });
-    if (sprint.status !== "planning") {
-      return NextResponse.json(
-        { error: "Only planning-stage sprints can be deleted. Close active sprints first." },
-        { status: 422 }
-      );
-    }
 
     // Verify user is a workspace member
-    const { data: member } = await supabase
-      .from("team_members")
-      .select("full_name, job_title")
+    const { data: wsMember } = await supabase
+      .from("workspace_members")
+      .select("user_id")
       .eq("user_id", user.id)
       .eq("workspace_id", sprint.workspace_id)
       .maybeSingle();
 
-    if (!member) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!wsMember) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    // Soft-delete
+    // Get name for audit log
+    const { data: teamMember } = await admin
+      .from("team_members")
+      .select("full_name")
+      .eq("user_id", user.id)
+      .eq("workspace_id", sprint.workspace_id)
+      .maybeSingle();
+    const deletedByName = teamMember?.full_name || "Unknown";
+
+    // Soft-delete the sprint
     const { error } = await admin
       .from("sprints")
       .update({ deleted_at: new Date().toISOString() })
@@ -56,9 +58,9 @@ export async function DELETE(request: NextRequest) {
       entity_id: sprintId,
       entity_name: sprint.name,
       deleted_by: user.id,
-      deleted_by_name: member.full_name || "Unknown",
+      deleted_by_name: deletedByName,
       workspace_id: sprint.workspace_id,
-      metadata: { project_id: sprint.project_id },
+      metadata: { project_id: sprint.project_id, sprint_status: sprint.status },
     });
 
     return NextResponse.json({ success: true });
@@ -94,14 +96,14 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "Recovery window expired (30 days)" }, { status: 410 });
     }
 
-    const { data: member } = await supabase
-      .from("team_members")
-      .select("id")
+    const { data: wsMember } = await supabase
+      .from("workspace_members")
+      .select("user_id")
       .eq("user_id", user.id)
       .eq("workspace_id", sprint.workspace_id)
       .maybeSingle();
 
-    if (!member) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!wsMember) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { error } = await admin
       .from("sprints")

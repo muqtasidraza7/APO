@@ -237,10 +237,11 @@ export default function AssignTaskModal({ member, workspaceId, onClose, onSucces
             setSubmitting(true);
             setError("");
 
+            // ── Step 1: Write to team_activity (audit log) ────────────────────
             const { error: actErr } = await supabase.from("team_activity").insert({
                 workspace_id: workspaceId,
-                user_id: currentUserId,       
-                team_member_id: member.id,    
+                user_id: currentUserId,
+                team_member_id: member.id,
                 activity_type: "task_assigned",
                 entity_type: "milestone",
                 entity_id: selectedProject.id,
@@ -255,11 +256,38 @@ export default function AssignTaskModal({ member, workspaceId, onClose, onSucces
                     status: "active",
                 },
             });
-
             if (actErr) throw actErr;
 
+            // ── Step 2: Write to project_assignments (so team workload API sees it) ─
+            // Upsert to avoid duplicates if called twice
+            await supabase.from("project_assignments").upsert({
+                project_id: selectedProject.id,
+                resource_id: member.id,
+                task_name: selectedMilestone.title,
+                week_number: selectedMilestone.week || 0,
+                match_reason: `Manually assigned by PM on ${new Date().toLocaleDateString()}`,
+                manually_completed: false,
+            }, { onConflict: "project_id,resource_id,task_name" });
+
+            // ── Step 3: Update ai_data.milestones[].assigned_member_ids ──────────
+            // This is what the member project filter and MilestoneList UI reads
+            const currentIds: string[] = selectedMilestone.assigned_member_ids || [];
+            if (!currentIds.includes(member.id)) {
+                const newIds = [...currentIds, member.id];
+                // Call the existing milestone-team API that patches ai_data correctly
+                await fetch("/api/projects/milestone-team", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        projectId: selectedProject.id,
+                        milestoneTitle: selectedMilestone.title,
+                        memberIds: newIds,
+                    }),
+                });
+            }
+
             setSuccess(true);
-            await fetchExistingAssignments(projects); // refresh list so new entry is visible
+            await fetchExistingAssignments(projects);
             setTimeout(() => {
                 onSuccess(selectedMilestone.title, selectedProject.name);
             }, 1300);
@@ -311,6 +339,14 @@ export default function AssignTaskModal({ member, workspaceId, onClose, onSucces
 
                 if (upErr) throw upErr;
             }
+
+            // ── Always remove from project_assignments so team workload API is in sync ─
+            await supabase
+                .from("project_assignments")
+                .delete()
+                .eq("project_id", assignment.project_id)
+                .eq("resource_id", member.id)
+                .eq("task_name", assignment.task_title);
 
             setExistingAssignments(prev => prev.filter(a => a.id !== assignmentId));
             setReportIssueFor(null);

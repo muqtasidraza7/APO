@@ -19,6 +19,7 @@ interface Project {
   status?: string;
   ai_status?: string;
   created_at: string;
+  ai_data?: any;
 }
 
 interface Sprint {
@@ -38,6 +39,7 @@ interface SprintTask {
   project_id?: string;
   assigned_to?: string;
   created_at: string;
+  parent_milestone_id?: string;
 }
 
 interface TeamMemberRaw {
@@ -272,7 +274,7 @@ const HEALTH_CFG = {
 type SprintHealthKey = keyof typeof HEALTH_CFG;
 
 export default function DashboardClient({
-  stats, projects, activities, sprints, sprintTasks,
+  stats, projects, activities, workspace, sprints, sprintTasks,
   teamMembers, recentActivity, aiMilestones, userRole, currentMember,
 }: DashboardClientProps) {
   const router = useRouter();
@@ -321,21 +323,18 @@ export default function DashboardClient({
   // ── Reminder tabs ──────────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<"upcoming" | "missing" | "completed">("upcoming");
 
-  const displayedTasks = (() => {
+  const displayedSprints = (() => {
     const now = new Date();
-    const getEnd = (sprintId: string) => {
-      const s = sprints.find((sp) => sp.id === sprintId);
-      return s ? new Date(s.end_date) : new Date(now.getTime() + 7 * 86_400_000);
-    };
+    const getEnd = (sprint: any) => new Date(sprint.end_date);
     if (activeTab === "completed")
-      return sprintTasks.filter((t) => t.status === "done").slice(0, 3);
+      return sprints.filter((s) => s.status === "completed").slice(0, 3);
     if (activeTab === "missing")
-      return sprintTasks
-        .filter((t) => t.status !== "done" && getEnd(t.sprint_id) < now)
+      return sprints
+        .filter((s) => s.status !== "completed" && getEnd(s) < now)
         .slice(0, 3);
-    return sprintTasks
-      .filter((t) => t.status !== "done" && getEnd(t.sprint_id) >= now)
-      .sort((a, b) => getEnd(a.sprint_id).getTime() - getEnd(b.sprint_id).getTime())
+    return sprints
+      .filter((s) => s.status !== "completed" && getEnd(s) >= now)
+      .sort((a, b) => getEnd(a).getTime() - getEnd(b).getTime())
       .slice(0, 3);
   })();
 
@@ -440,14 +439,23 @@ export default function DashboardClient({
 
   const isAdmin = userRole === "owner" || userRole === "pm";
 
-  // Members with at least one in-progress or in-review task → capacity proxy
-  const activeMemberIds = new Set(
-    sprintTasks
-      .filter((t) => t.status === "in_progress" || t.status === "in_review")
-      .map((t) => t.assigned_to)
-      .filter((id): id is string => Boolean(id))
-  );
-  const activeMembersCount = activeMemberIds.size;
+  // Members with any non-done sprint task OR any non-completed milestone assignment
+  // Only count tasks from non-deleted sprints (sprints prop is already filtered)
+  const activeSprintIds = new Set(sprints.map((s) => s.id));
+  const activeMemberIds = new Set<string>();
+  sprintTasks
+    .filter((t) => t.assigned_to && t.status !== "done" && (!t.sprint_id || activeSprintIds.has(t.sprint_id)))
+    .forEach((t) => activeMemberIds.add(t.assigned_to!));
+  projects.forEach((p) => {
+    ((p.ai_data?.milestones as any[]) || []).forEach((ms) => {
+      if (ms.status !== "completed") {
+        ((ms.assigned_member_ids as string[]) || []).forEach((id) => {
+          if (id) activeMemberIds.add(id);
+        });
+      }
+    });
+  });
+  const activeMembersCount = Math.min(activeMemberIds.size, stats.teamMembersCount);
   const capacityPct = stats.teamMembersCount > 0
     ? Math.round((activeMembersCount / stats.teamMembersCount) * 100)
     : 0;
@@ -460,33 +468,92 @@ export default function DashboardClient({
     const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
 
     const myTasks       = sprintTasks.filter((t) => t.assigned_to === currentMember.id);
-    const myTodoTasks   = myTasks.filter((t) => t.status === "backlog");
-    const myActiveTasks = myTasks.filter((t) => t.status === "in_progress" || t.status === "in_review");
-    const myDoneTasks   = myTasks.filter((t) => t.status === "done");
+    
+    // ── Synthesize milestones without sprint tasks into backlog tasks ──────────
+    const myMilestonesMap = new Map();
+    projects.forEach(p => {
+      const ms = p.ai_data?.milestones || [];
+      ms.forEach((m: any) => {
+        if ((m.assigned_member_ids || []).includes(currentMember.id)) {
+          myMilestonesMap.set(`${p.id}::${m.title}`, { p, m });
+        }
+      });
+    });
+    activities.forEach(a => {
+      if (a.activity_type === "task_assigned" && a.team_member_id === currentMember.id && a.metadata?.status !== "removed") {
+         const pId = a.metadata?.project_id as string;
+         const title = a.metadata?.task_title as string;
+         if (pId && title && !myMilestonesMap.has(`${pId}::${title}`)) {
+            const p = projects.find(proj => proj.id === pId);
+            const aiMs = p?.ai_data?.milestones?.find((x: any) => x.title === title);
+            if (p) myMilestonesMap.set(`${pId}::${title}`, { p, m: { title, week: a.metadata?.week, status: aiMs?.status || "pending" } });
+         }
+      }
+    });
+
+    const synthesizedTasks = Array.from(myMilestonesMap.values())
+      .filter(({ p, m }) => !myTasks.some(st => st.parent_milestone_id === m.title && st.project_id === p.id))
+      .map(({ p, m }) => {
+        let mappedStatus = "backlog";
+        if (m.status === "in_progress") mappedStatus = "in_progress";
+        if (m.status === "completed") mappedStatus = "done";
+        
+        return {
+          id: `virtual-${p.id}-${m.title}`,
+          title: `${m.title} (Milestone)`,
+          status: mappedStatus,
+          sprint_id: "virtual",
+          project_id: p.id,
+          assigned_to: currentMember.id,
+          created_at: p.created_at,
+          sprintName: p.name,
+          sprintEnd: new Date(new Date(p.created_at).getTime() + (m.week || 0) * 7 * 86400000).toISOString()
+        };
+      });
+
+    const allMyTasks = [...myTasks, ...synthesizedTasks];
+
+    const myTodoTasks   = allMyTasks.filter((t) => t.status === "backlog");
+    const myActiveTasks = allMyTasks.filter((t) => t.status === "in_progress" || t.status === "in_review");
+    const myDoneTasks   = allMyTasks.filter((t) => t.status === "done");
 
     const now = new Date();
-    const mySprintIds = new Set(myTasks.map((t) => t.sprint_id));
-    const myActiveSprint = sprints
-      .filter((s) => mySprintIds.has(s.id) && s.status !== "completed" && new Date(s.end_date) > now)
-      .sort((a, b) => new Date(a.end_date).getTime() - new Date(b.end_date).getTime())[0] ?? null;
 
-    const mySprintTasks  = myActiveSprint ? myTasks.filter((t) => t.sprint_id === myActiveSprint.id) : [];
-    const mySprintDone   = mySprintTasks.filter((t) => t.status === "done").length;
-    const mySprintPct    = mySprintTasks.length > 0 ? Math.round((mySprintDone / mySprintTasks.length) * 100) : 0;
-    const mySprintDaysLeft = myActiveSprint
-      ? Math.max(0, Math.floor((new Date(myActiveSprint.end_date).getTime() - now.getTime()) / 86_400_000))
-      : null;
-    const mySprintProject = myActiveSprint ? projects.find((p) => p.id === myActiveSprint.project_id) : null;
+    // Group tasks by project for the "My Projects" widget
+    const myProjectMap = new Map<string, { id: string; name: string; total: number; done: number; inProgress: number }>();
+    allMyTasks.forEach((task) => {
+      if (!task.project_id) return;
+      const proj = projects.find((p) => p.id === task.project_id);
+      if (!proj) return;
+      const entry = myProjectMap.get(task.project_id);
+      if (entry) {
+        entry.total++;
+        if (task.status === "done") entry.done++;
+        if (task.status === "in_progress" || task.status === "in_review") entry.inProgress++;
+      } else {
+        myProjectMap.set(task.project_id, {
+          id: task.project_id,
+          name: proj.name,
+          total: 1,
+          done: task.status === "done" ? 1 : 0,
+          inProgress: (task.status === "in_progress" || task.status === "in_review") ? 1 : 0,
+        });
+      }
+    });
+    const myProjectList = Array.from(myProjectMap.values());
 
-    const openTasksSorted = [...myTasks]
+    const openTasksSorted = [...allMyTasks]
       .filter((t) => t.status !== "done")
       .map((t) => {
+        if (t.sprint_id === "virtual") return t; // It already has sprintName and sprintEnd
         const sprint = sprints.find((s) => s.id === t.sprint_id);
         return { ...t, sprintName: sprint?.name ?? "", sprintEnd: sprint?.end_date ?? "" };
       })
-      .filter((t) => t.sprintEnd)
-      .sort((a, b) => new Date(a.sprintEnd).getTime() - new Date(b.sprintEnd).getTime())
+      .filter((t) => (t as any).sprintEnd)
+      .sort((a, b) => new Date((a as any).sprintEnd).getTime() - new Date((b as any).sprintEnd).getTime())
       .slice(0, 5);
+
+
 
     const TASK_STATUS_CFG: Record<string, { label: string; bg: string; text: string; dot: string }> = {
       backlog:     { label: "To Do",       bg: "bg-slate-100",  text: "text-slate-600",   dot: "bg-slate-400"   },
@@ -532,7 +599,7 @@ export default function DashboardClient({
           >
             <div className="absolute -right-4 -top-4 w-28 h-28 rounded-full bg-white/10 blur-2xl pointer-events-none" />
             <span className="text-[10px] font-bold uppercase tracking-widest text-violet-200 block mb-4">My Tasks</span>
-            <div className="text-5xl font-black leading-none mb-3">{myTasks.length}</div>
+            <div className="text-5xl font-black leading-none mb-3">{allMyTasks.length}</div>
             <div className="flex items-center gap-2 flex-wrap">
               <span className="bg-white/20 px-2 py-0.5 rounded-full text-[10px] font-bold text-violet-100">
                 {myActiveTasks.length} active
@@ -582,65 +649,68 @@ export default function DashboardClient({
           </div>
         </div>
 
-        {/* Active Sprint + Open Tasks */}
+        {/* My Projects + Open Tasks */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-          {/* Active Sprint Card */}
+          {/* My Projects Card */}
           <div className="bg-white rounded-2xl p-6 border border-[#E8ECF4] shadow-sm flex flex-col">
-            <h3 className="font-bold text-slate-900 mb-1">My Active Sprint</h3>
-            <p className="text-xs text-slate-400 mb-5">Current sprint progress</p>
+            <h3 className="font-bold text-slate-900 mb-1">My Projects</h3>
+            <p className="text-xs text-slate-400 mb-5">Projects you have tasks in</p>
 
-            {myActiveSprint ? (
-              <Link
-                href={`/dashboard/projects/${myActiveSprint.project_id}/sprints/${myActiveSprint.id}`}
-                className="block group flex-1"
-              >
-                <div className="bg-gradient-to-br from-indigo-50 to-violet-50 border border-indigo-100 rounded-xl p-5 hover:border-indigo-300 transition-colors h-full">
-                  <div className="flex items-start justify-between gap-2 mb-5">
-                    <div className="min-w-0">
-                      <h4 className="font-bold text-slate-900 text-base group-hover:text-indigo-700 transition-colors truncate">
-                        {myActiveSprint.name}
-                      </h4>
-                      {mySprintProject && (
-                        <p className="text-xs text-slate-500 mt-0.5 truncate">{mySprintProject.name}</p>
-                      )}
-                    </div>
-                    {mySprintDaysLeft !== null && (
-                      <div className="text-right flex-shrink-0">
-                        <div className="text-3xl font-black text-indigo-700 leading-none">{mySprintDaysLeft}</div>
-                        <div className="text-[10px] text-indigo-400 font-semibold uppercase tracking-wide">days left</div>
+            {myProjectList.length > 0 ? (
+              <div className="flex-1 space-y-3 overflow-y-auto max-h-[350px] pr-1">
+                {myProjectList.map((proj) => {
+                  const pct = proj.total > 0 ? Math.round((proj.done / proj.total) * 100) : 0;
+                  return (
+                    <Link
+                      key={proj.id}
+                      href={`/dashboard/projects/${proj.id}`}
+                      className="block group"
+                    >
+                      <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 hover:border-indigo-200 hover:bg-indigo-50/30 transition-colors">
+                        <div className="flex items-center justify-between gap-2 mb-3">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-7 h-7 rounded-lg bg-indigo-100 flex items-center justify-center flex-shrink-0">
+                              <FolderKanban size={13} className="text-indigo-600" />
+                            </div>
+                            <h4 className="font-semibold text-slate-800 text-sm group-hover:text-indigo-700 transition-colors truncate">
+                              {proj.name}
+                            </h4>
+                          </div>
+                          <span className="text-xs font-black text-indigo-600 flex-shrink-0">{pct}%</span>
+                        </div>
+                        <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden mb-2">
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 transition-all duration-700"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                        <div className="flex items-center gap-3 text-[11px] text-slate-400 font-medium">
+                          <span className="flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                            {proj.done} done
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                            {proj.inProgress} in progress
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+                            {proj.total - proj.done - proj.inProgress} todo
+                          </span>
+                        </div>
                       </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-xs text-slate-500 font-medium">
-                        {mySprintDone} of {mySprintTasks.length} tasks done
-                      </span>
-                      <span className="text-xs font-black text-indigo-700">{mySprintPct}%</span>
-                    </div>
-                    <div className="w-full h-2.5 bg-white/80 rounded-full overflow-hidden border border-indigo-100">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 transition-all duration-700"
-                        style={{ width: `${mySprintPct}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  <p className="text-[11px] text-slate-400 mt-4 flex items-center gap-1.5">
-                    <Calendar size={10} />
-                    Due {new Date(myActiveSprint.end_date).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
-                  </p>
-                </div>
-              </Link>
+                    </Link>
+                  );
+                })}
+              </div>
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center py-10 text-center">
                 <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center mb-3">
-                  <Zap size={22} className="text-indigo-200" />
+                  <FolderKanban size={22} className="text-indigo-200" />
                 </div>
-                <p className="text-sm font-semibold text-slate-400">No active sprint</p>
-                <p className="text-xs text-slate-300 mt-1">You have no tasks in an ongoing sprint</p>
+                <p className="text-sm font-semibold text-slate-400">No projects yet</p>
+                <p className="text-xs text-slate-300 mt-1">Tasks assigned to you will appear here</p>
               </div>
             )}
           </div>
@@ -662,11 +732,12 @@ export default function DashboardClient({
 
             <div className="flex-1 space-y-2.5 overflow-y-auto max-h-72">
               {openTasksSorted.length > 0 ? openTasksSorted.map((task) => {
+                const t = task as any;
                 const cfg = TASK_STATUS_CFG[task.status] ?? TASK_STATUS_CFG.backlog;
-                const dueDate = task.sprintEnd
-                  ? new Date(task.sprintEnd).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+                const dueDate = t.sprintEnd
+                  ? new Date(t.sprintEnd).toLocaleDateString("en-US", { month: "short", day: "numeric" })
                   : "—";
-                const isPast = task.sprintEnd ? new Date(task.sprintEnd) < now : false;
+                const isPast = t.sprintEnd ? new Date(t.sprintEnd) < now : false;
                 return (
                   <div
                     key={task.id}
@@ -679,7 +750,7 @@ export default function DashboardClient({
                       <h4 className="text-slate-900 font-semibold text-sm truncate leading-tight">{task.title}</h4>
                       <div className="flex items-center gap-2 mt-1">
                         <span className="bg-white border border-slate-200 text-slate-500 text-[10px] font-semibold px-1.5 py-0.5 rounded truncate max-w-[100px]">
-                          {task.sprintName}
+                          {(task as any).sprintName}
                         </span>
                         <span className={`flex items-center gap-1 text-[11px] font-medium ${isPast ? "text-red-500" : "text-slate-400"}`}>
                           <Clock size={10} /> {dueDate}
@@ -825,7 +896,7 @@ export default function DashboardClient({
           <div className="text-5xl font-black text-slate-900 leading-none mb-3">{stats.activeSprintsCount}</div>
           <div className="text-xs text-slate-400 font-medium flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block" />
-            {sprintTasks.filter((t) => t.status !== "done").length} open tasks
+            {sprintTasks.filter((t) => t.status !== "done" && (!t.sprint_id || activeSprintIds.has(t.sprint_id))).length} open tasks
           </div>
           <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-emerald-400 to-teal-300 rounded-b-2xl" />
         </div>
@@ -913,11 +984,11 @@ export default function DashboardClient({
           )}
         </div>
 
-        {/* Task Reminders */}
+        {/* Sprint Reminders */}
         <div className="bg-white rounded-2xl p-6 border border-[#E8ECF4] shadow-sm flex flex-col">
           <div className="mb-4">
-            <h3 className="font-bold text-slate-900">Task Reminders</h3>
-            <p className="text-xs text-slate-400 mt-0.5">Sprint task tracker across all projects</p>
+            <h3 className="font-bold text-slate-900">Sprint Reminders</h3>
+            <p className="text-xs text-slate-400 mt-0.5">Sprint tracker across all projects</p>
           </div>
 
           <div className="flex bg-slate-100 p-1 rounded-xl mb-5 gap-0.5">
@@ -937,14 +1008,12 @@ export default function DashboardClient({
           </div>
 
           <div className="flex-1 flex flex-col justify-center min-h-[160px]">
-            {displayedTasks.length > 0 ? (
+            {displayedSprints.length > 0 ? (
               <div className="space-y-2.5">
-                {displayedTasks.map((task, i) => {
-                  const sprint = sprints.find((s) => s.id === task.sprint_id);
-                  const dueDate = sprint
-                    ? new Date(sprint.end_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })
-                    : "—";
+                {displayedSprints.map((sprint, i) => {
+                  const dueDate = new Date(sprint.end_date).toLocaleDateString("en-US", { month: "short", day: "numeric" });
                   const isMissing = activeTab === "missing";
+                  const sprintProject = projects.find(p => p.id === sprint.project_id);
                   return (
                     <div key={i} className={`flex gap-3 items-start p-3 rounded-xl border transition-colors ${
                       isMissing ? "bg-red-50/50 border-red-100" : "bg-slate-50 border-slate-100"
@@ -956,10 +1025,10 @@ export default function DashboardClient({
                         {activeTab === "completed" ? <CheckCircle2 size={14} /> : <Circle size={14} />}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h4 className="text-slate-900 font-semibold text-sm truncate leading-tight">{task.title}</h4>
+                        <h4 className="text-slate-900 font-semibold text-sm truncate leading-tight">{sprint.name}</h4>
                         <div className="flex items-center gap-2 mt-1">
-                          <span className="bg-white border border-slate-200 text-slate-600 text-[10px] font-semibold px-1.5 py-0.5 rounded">
-                            {sprint?.name || "Sprint"}
+                          <span className="bg-white border border-slate-200 text-slate-600 text-[10px] font-semibold px-1.5 py-0.5 rounded truncate max-w-[120px]">
+                            {sprintProject?.name || "Project"}
                           </span>
                           <span className={`flex items-center gap-1 text-[11px] font-medium ${
                             isMissing ? "text-red-500" : "text-slate-400"
@@ -975,7 +1044,7 @@ export default function DashboardClient({
             ) : (
               <div className="flex flex-col items-center justify-center py-8 text-center">
                 <Calendar className="mx-auto mb-2 text-slate-200" size={28} />
-                <p className="text-sm font-medium text-slate-400">No tasks in this view</p>
+                <p className="text-sm font-medium text-slate-400">No sprints in this view</p>
               </div>
             )}
           </div>

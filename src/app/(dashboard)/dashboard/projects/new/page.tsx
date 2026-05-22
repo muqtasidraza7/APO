@@ -14,6 +14,7 @@ import {
 import { createProject } from "../actions";
 import { createClient } from "../../../../utils/supabase/client";
 import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 export default function NewProjectPage() {
   const [isDragging, setIsDragging] = useState(false);
@@ -22,6 +23,7 @@ export default function NewProjectPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const router = useRouter();
 
   useEffect(() => {
     const fetchWorkspace = async () => {
@@ -29,17 +31,25 @@ export default function NewProjectPage() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      if (user) {
-        const { data } = await supabase
-          .from("workspace_members")
-          .select("workspace_id")
-          .eq("user_id", user.id)
-          .single();
-        if (data) setWorkspaceId(data.workspace_id);
+      if (!user) { router.replace("/login"); return; }
+
+      // Block team members from creating projects
+      const roleRes = await fetch("/api/me/role");
+      const roleData = roleRes.ok ? await roleRes.json() : {};
+      if (roleData.role === "member" || roleData.role === "client") {
+        router.replace("/dashboard");
+        return;
       }
+
+      const { data } = await supabase
+        .from("workspace_members")
+        .select("workspace_id")
+        .eq("user_id", user.id)
+        .single();
+      if (data) setWorkspaceId(data.workspace_id);
     };
     fetchWorkspace();
-  }, []);
+  }, [router]);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();

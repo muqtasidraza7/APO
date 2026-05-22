@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "../../../utils/supabase/client";
 import {
   Users,
@@ -19,7 +20,10 @@ import {
   Copy,
   Check,
   AlertTriangle,
+  Briefcase,
+  ArrowLeft,
 } from "lucide-react";
+import Link from "next/link";
 import TeamMemberCard from "../../../components/TeamMemberCard";
 import CapacityGauge from "../../../components/CapacityGauge";
 import ChangeRoleModal from "../../../components/ChangeRoleModal";
@@ -35,6 +39,7 @@ export interface MilestoneStatus {
   deadline: string;
   phase: "active" | "deferred" | "overdue" | "done";
   is_done: boolean;
+  actual_status?: string;
   auto_completed: boolean;
   manually_completed: boolean;
   sprint_tasks_total: number;
@@ -88,6 +93,7 @@ export interface TeamMember {
 
 export default function TeamDashboardPage() {
   const supabase = createClient();
+  const router = useRouter();
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [ownerId, setOwnerId] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -97,6 +103,7 @@ export default function TeamDashboardPage() {
   >(new Map());
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isMember, setIsMember] = useState(false);
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [assigningMember, setAssigningMember] = useState<TeamMember | null>(
     null,
@@ -167,7 +174,16 @@ export default function TeamDashboardPage() {
 
       const isOwner = wsOwnerId === user.id;
       const callerRole = (data.role as string)?.toLowerCase();
-      setIsAdmin(isOwner || callerRole === "pm");
+      const adminFlag = isOwner || callerRole === "pm";
+
+      // Block team members from accessing this page
+      if (!adminFlag && callerRole !== "client") {
+        router.replace("/dashboard");
+        return;
+      }
+
+      setIsAdmin(adminFlag);
+      setIsMember(!adminFlag && callerRole !== "client");
 
       // Build role map for all workspace members
       const { data: allMembers } = await supabase
@@ -363,7 +379,7 @@ export default function TeamDashboardPage() {
     );
   }
 
-  function copyInvite(role: "pm" | "member") {
+  function copyInvite(role: "pm" | "member" | "client") {
     if (!workspaceId || typeof window === "undefined") return;
     const link = `${window.location.origin}/onboarding?invite=${workspaceId}&role=${role}`;
     navigator.clipboard.writeText(link);
@@ -375,13 +391,34 @@ export default function TeamDashboardPage() {
   if (loading && !workspaceId) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <RefreshCw size={36} className="animate-spin text-indigo-500" />
+        <RefreshCw size={36} className="animate-spin text-violet-500" />
+      </div>
+    );
+  }
+
+  // Access guard — plain members should not manage the team
+  if (!loading && isMember) {
+    return (
+      <div className="max-w-lg mx-auto py-20 text-center animate-in fade-in duration-500">
+        <div className="w-20 h-20 bg-amber-50 border-2 border-amber-200 rounded-3xl flex items-center justify-center mx-auto mb-6">
+          <ShieldAlert size={36} className="text-amber-500" />
+        </div>
+        <h1 className="text-2xl font-bold text-slate-900 mb-3">Access Restricted</h1>
+        <p className="text-slate-500 text-sm leading-relaxed mb-8 max-w-sm mx-auto">
+          The Team Dashboard is for project managers and workspace owners only. As a team member, your tasks and project assignments are visible from the Projects section.
+        </p>
+        <Link
+          href="/dashboard"
+          className="inline-flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white rounded-xl font-medium text-sm hover:bg-slate-800 transition-colors"
+        >
+          <ArrowLeft size={16} /> Back to Dashboard
+        </Link>
       </div>
     );
   }
 
   return (
-    <div className="max-w-7xl mx-auto space-y-8">
+    <div className="space-y-6">
       {toast && (
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 bg-white border border-green-200 shadow-xl rounded-2xl px-5 py-4 animate-in slide-in-from-bottom-4">
           <CheckCircle2 size={20} className="text-green-500 flex-shrink-0" />
@@ -395,27 +432,25 @@ export default function TeamDashboardPage() {
       )}
 
       {/* Header */}
-      <div className="flex items-end justify-between flex-wrap gap-4">
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <p className="text-sm font-medium text-slate-400 mb-1">
-            People Management
-          </p>
-          <h1 className="text-3xl font-bold text-slate-900">Team Dashboard</h1>
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight">Team Dashboard</h1>
+          <p className="text-sm text-slate-400 mt-0.5 font-medium">People Management</p>
         </div>
-        <div className="flex gap-3 flex-wrap">
+        <div className="flex gap-2 flex-wrap">
           <button
             onClick={fetchTeamMembers}
-            className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-2"
+            className="px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-2 shadow-sm"
           >
-            <RefreshCw size={16} /> Refresh
+            <RefreshCw size={15} /> Refresh
           </button>
 
           {teamMembers.length >= 2 && (
             <button
               onClick={() => setShowConflictModal(true)}
-              className="px-4 py-2 bg-amber-50 border border-amber-200 rounded-lg text-sm font-medium text-amber-700 hover:bg-amber-100 transition-colors flex items-center gap-2"
+              className="px-3.5 py-2 bg-amber-50 border border-amber-200 rounded-xl text-sm font-medium text-amber-700 hover:bg-amber-100 transition-colors flex items-center gap-2 shadow-sm"
             >
-              <ShieldAlert size={16} /> Record Conflict
+              <ShieldAlert size={15} /> Record Conflict
             </button>
           )}
 
@@ -423,7 +458,7 @@ export default function TeamDashboardPage() {
             <div className="relative">
               <button
                 onClick={() => setShowInvitePanel((v) => !v)}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
+                className="px-3.5 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-sm font-semibold transition-colors flex items-center gap-2 shadow-sm shadow-violet-200"
               >
                 <LinkIcon size={16} /> Invite People
               </button>
@@ -479,6 +514,42 @@ export default function TeamDashboardPage() {
                       </div>
                     </div>
 
+                    {/* Client link — owner only */}
+                    {ownerId === currentUserId && (
+                      <div className="px-4 py-3.5 border-b border-slate-50">
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 bg-emerald-100 rounded-lg flex items-center justify-center">
+                              <Briefcase size={13} className="text-emerald-600" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-slate-800">
+                                Client
+                              </p>
+                              <p className="text-[11px] text-slate-400">
+                                Read-only project overview
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => copyInvite("client")}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                              copiedKey === "client"
+                                ? "bg-green-100 text-green-700 border border-green-200"
+                                : "bg-emerald-50 hover:bg-emerald-100 text-emerald-700"
+                            }`}
+                          >
+                            {copiedKey === "client" ? (
+                              <Check size={12} />
+                            ) : (
+                              <Copy size={12} />
+                            )}
+                            {copiedKey === "client" ? "Copied!" : "Copy"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Project Manager link — owner only */}
                     {ownerId === currentUserId && (
                       <div className="px-4 py-3.5">
@@ -521,7 +592,7 @@ export default function TeamDashboardPage() {
                     <div className="px-4 py-2.5 bg-amber-50 border-t border-amber-100">
                       <p className="text-[10px] text-amber-700 flex items-center gap-1.5">
                         <Crown size={10} className="flex-shrink-0" />
-                        Only the owner can generate PM invite links
+                        Client and PM links are owner-only
                       </p>
                     </div>
                   </div>
@@ -548,15 +619,15 @@ export default function TeamDashboardPage() {
           </p>
           <button
             onClick={() => setShowInvitePanel(true)}
-            className="btn btn-primary"
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-sm font-semibold transition-colors shadow-sm shadow-violet-200"
           >
-            <LinkIcon size={18} className="mr-2" /> Invite First Member
+            <LinkIcon size={16} /> Invite First Member
           </button>
         </div>
       ) : (
         <>
-          <div className="flex items-center gap-3 flex-wrap">
-            <Filter size={16} className="text-slate-400" />
+          <div className="flex items-center gap-2 flex-wrap">
+            <Filter size={14} className="text-slate-400 flex-shrink-0" />
             <div className="flex gap-2 flex-wrap">
               {[
                 { value: "all", label: "All Members" },
@@ -567,9 +638,9 @@ export default function TeamDashboardPage() {
                 <button
                   key={f.value}
                   onClick={() => setFilterStatus(f.value)}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  className={`px-3.5 py-2 rounded-xl text-sm font-medium transition-colors shadow-sm ${
                     filterStatus === f.value
-                      ? "bg-indigo-600 text-white"
+                      ? "bg-violet-600 text-white shadow-violet-200"
                       : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
                   }`}
                 >
@@ -584,7 +655,7 @@ export default function TeamDashboardPage() {
 
           {loading ? (
             <div className="flex justify-center py-12">
-              <RefreshCw size={32} className="animate-spin text-indigo-400" />
+              <RefreshCw size={32} className="animate-spin text-violet-400" />
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -595,18 +666,8 @@ export default function TeamDashboardPage() {
                   workspaceId={workspaceId!}
                   workspaceRole={roleMap.get(member.user_id) ?? "member"}
                   callerIsOwner={ownerId === currentUserId}
-                  onAssignTask={() => setAssigningMember(member)}
-                  onRemove={(m) => {
-                    setRemovingMember(m);
-                    setRemoveConfirmText("");
-                    setRemoveError("");
-                  }}
-                  onChangeRole={
-                    isAdmin ? (m) => setChangingRoleMember(m) : undefined
-                  }
-                  onEditProfile={
-                    isAdmin ? (m) => setEditingMember(m) : undefined
-                  }
+                  onChangeRole={isAdmin ? (m) => setChangingRoleMember(m) : undefined}
+                  onEditProfile={isAdmin ? (m) => setEditingMember(m) : undefined}
                   onPatternRecorded={fetchTeamMembers}
                 />
               ))}

@@ -54,11 +54,11 @@ export async function POST(request: NextRequest) {
 
     const cat = VALID_CATEGORIES.includes(category) ? category : "other";
 
-    // Verify workspace membership
-    const { data: member } = await supabase
-      .from("team_members").select("user_id")
+    // Verify workspace membership via workspace_members (owners who aren't in team_members still pass)
+    const { data: wsMember } = await supabase
+      .from("workspace_members").select("user_id")
       .eq("user_id", user.id).eq("workspace_id", workspaceId).maybeSingle();
-    if (!member) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!wsMember) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const admin = createAdminClient();
     const { data: expense, error } = await admin

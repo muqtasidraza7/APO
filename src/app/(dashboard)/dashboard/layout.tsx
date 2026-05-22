@@ -18,7 +18,6 @@ import {
   Camera,
   MessageSquare,
   Brain,
-  ChevronRight,
   CheckCheck,
   Inbox,
   Briefcase,
@@ -77,13 +76,19 @@ export default function DashboardLayout({
       setCurrentUserId(user.id);
 
       fetch("/api/me/role")
-        .then((r) => r.ok ? r.json() : { role: "" })
+        .then((r) => (r.ok ? r.json() : { role: "" }))
         .then((d) => setUserRole(d.role || ""))
         .catch(() => {});
 
-      if (user.user_metadata?.avatar_url) {
-        setAvatarUrl(user.user_metadata.avatar_url);
-      }
+      // Load avatar: prefer team_members table (most up-to-date), fall back to auth metadata
+      const { data: tm } = await supabase
+        .from("team_members")
+        .select("avatar_url")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      const url = tm?.avatar_url || user.user_metadata?.avatar_url || null;
+      if (url) setAvatarUrl(url + "?v=" + Date.now());
     };
 
     checkAuth();
@@ -91,10 +96,16 @@ export default function DashboardLayout({
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
         setIsDropdownOpen(false);
       }
-      if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
+      if (
+        notifRef.current &&
+        !notifRef.current.contains(event.target as Node)
+      ) {
         setIsNotifOpen(false);
       }
     }
@@ -106,7 +117,7 @@ export default function DashboardLayout({
     if (!currentUserId) return;
 
     fetch("/api/notifications")
-      .then((r) => r.ok ? r.json() : { notifications: [] })
+      .then((r) => (r.ok ? r.json() : { notifications: [] }))
       .then((d) => {
         const list = d.notifications || [];
         setNotifs(list);
@@ -119,15 +130,22 @@ export default function DashboardLayout({
       .channel(`notifs-${currentUserId}`)
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${currentUserId}` },
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "notifications",
+          filter: `user_id=eq.${currentUserId}`,
+        },
         (payload) => {
           setNotifs((prev) => [payload.new as any, ...prev]);
           setNotifCount((prev) => prev + 1);
-        }
+        },
       )
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [currentUserId]);
 
   function fmtTimeAgo(ts: string) {
@@ -158,37 +176,79 @@ export default function DashboardLayout({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
     });
-    setNotifs((prev) => prev.map((n) => n.id === id ? { ...n, is_read: true } : n));
+    setNotifs((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)),
+    );
     setNotifCount((prev) => Math.max(0, prev - 1));
   };
 
   const isMember = userRole === "member";
+  const isClient = userRole === "client";
 
-  const navItems = isMember
+  const navItems = isClient
     ? [
-        { name: "Dashboard",  href: "/dashboard",           icon: <LayoutDashboard size={18} /> },
-        { name: "Projects",   href: "/dashboard/projects",  icon: <FolderKanban size={18} />   },
-        { name: "My Work",    href: "/dashboard/my-work",   icon: <Briefcase size={18} />      },
-        { name: "Messages",   href: "/dashboard/messages",  icon: <MessageSquare size={18} />  },
-        { name: "Settings",   href: "/dashboard/settings",  icon: <Settings size={18} />       },
+        {
+          name: "My Projects",
+          href: "/dashboard/client-view",
+          icon: <FolderKanban size={18} />,
+        },
+        { name: "Messages", href: "/dashboard/messages", icon: <MessageSquare size={18} /> },
+        {
+          name: "Settings",
+          href: "/dashboard/settings",
+          icon: <Settings size={18} />,
+        },
       ]
-    : [
-        { name: "Dashboard",   href: "/dashboard",           icon: <LayoutDashboard size={18} /> },
-        { name: "Projects",    href: "/dashboard/projects",  icon: <FolderKanban size={18} />   },
-        { name: "Messages",    href: "/dashboard/messages",  icon: <MessageSquare size={18} />  },
-        { name: "Team",        href: "/dashboard/team",      icon: <Users size={18} />          },
-        { name: "AI Insights", href: "/dashboard/insights",  icon: <Brain size={18} />          },
-        { name: "Settings",    href: "/dashboard/settings",  icon: <Settings size={18} />       },
-      ];
+    : isMember
+      ? [
+          {
+            name: "Dashboard",
+            href: "/dashboard",
+            icon: <LayoutDashboard size={18} />,
+          },
+          {
+            name: "Projects",
+            href: "/dashboard/projects",
+            icon: <FolderKanban size={18} />,
+          },
+          { name: "Messages", href: "/dashboard/messages", icon: <MessageSquare size={18} /> },
+          {
+            name: "Settings",
+            href: "/dashboard/settings",
+            icon: <Settings size={18} />,
+          },
+        ]
+      : [
+          {
+            name: "Dashboard",
+            href: "/dashboard",
+            icon: <LayoutDashboard size={18} />,
+          },
+          {
+            name: "Projects",
+            href: "/dashboard/projects",
+            icon: <FolderKanban size={18} />,
+          },
+          { name: "Messages", href: "/dashboard/messages", icon: <MessageSquare size={18} /> },
+          { name: "Team", href: "/dashboard/team", icon: <Users size={18} /> },
+          {
+            name: "AI Insights",
+            href: "/dashboard/insights",
+            icon: <Brain size={18} />,
+          },
+          {
+            name: "Settings",
+            href: "/dashboard/settings",
+            icon: <Settings size={18} />,
+          },
+        ];
 
   const handleSignOut = async () => {
     setIsSigningOut(true);
     await signout();
   };
 
-  const handleAvatarUpload = async (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -226,166 +286,206 @@ export default function DashboardLayout({
           const ctx = canvas.getContext("2d");
           ctx?.drawImage(img, 0, 0, width, height);
 
-          canvas.toBlob(async (blob) => {
-            if (!blob) return;
+          canvas.toBlob(
+            async (blob) => {
+              if (!blob) return;
 
-            const filePath = `${user.id}/${Date.now()}.jpg`;
+              // Fixed path per user so upsert always replaces the same file
+              const filePath = `${user.id}/avatar.jpg`;
 
-            const { error: uploadError } = await supabase.storage
-              .from("avatars")
-              .upload(filePath, blob, {
-                contentType: "image/jpeg",
-                upsert: true,
-              });
+              const { error: uploadError } = await supabase.storage
+                .from("avatars")
+                .upload(filePath, blob, {
+                  contentType: "image/jpeg",
+                  upsert: true,
+                });
 
-            if (uploadError) {
-              console.error("Upload error:", uploadError);
-              if (uploadError.message.includes("bucket not found")) {
-                alert(
-                  "Storage bucket 'avatars' not found. Please run the provided SQL script."
-                );
+              if (uploadError) {
+                if (uploadError.message.includes("bucket not found")) {
+                  alert(
+                    "Storage bucket 'avatars' not found. Please create it in Supabase Storage.",
+                  );
+                }
+                setIsUploading(false);
+                return;
               }
+
+              const {
+                data: { publicUrl },
+              } = supabase.storage.from("avatars").getPublicUrl(filePath);
+
+              // Sync to both auth metadata and team_members table
+              await Promise.all([
+                supabase.auth.updateUser({ data: { avatar_url: publicUrl } }),
+                supabase
+                  .from("team_members")
+                  .update({ avatar_url: publicUrl })
+                  .eq("user_id", user.id),
+              ]);
+
+              // Cache-bust so browser shows new image immediately
+              setAvatarUrl(publicUrl + "?v=" + Date.now());
               setIsUploading(false);
-              return;
-            }
-
-            const {
-              data: { publicUrl },
-            } = supabase.storage.from("avatars").getPublicUrl(filePath);
-
-            await supabase.auth.updateUser({
-              data: { avatar_url: publicUrl },
-            });
-
-            setAvatarUrl(publicUrl);
-            setIsUploading(false);
-            setIsDropdownOpen(false);
-          }, "image/jpeg", 0.8);
+              setIsDropdownOpen(false);
+            },
+            "image/jpeg",
+            0.85,
+          );
         };
         img.src = event.target?.result as string;
       };
       reader.readAsDataURL(file);
-    } catch (error) {
-      console.error("Avatar upload failed", error);
+    } catch {
       setIsUploading(false);
     }
   };
 
-  const NavLinks = ({ onClose }: { onClose?: () => void }) => (
-    <div className="space-y-0.5">
-      {navItems.map((item) => {
-        // Dashboard root must match exactly — otherwise /dashboard/projects
-        // would also highlight it. All other items use prefix matching.
-        const isActive =
-          item.href === "/dashboard"
-            ? pathname === "/dashboard"
-            : pathname === item.href || pathname.startsWith(item.href + "/");
-        return (
-          <Link
-            key={item.name}
-            href={item.href}
-            onClick={onClose}
-            className={`group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 relative ${
-              isActive
-                ? "bg-violet-600 text-white shadow-lg shadow-violet-900/40"
-                : "text-slate-300 hover:bg-white/8 hover:text-white"
-            }`}
+  const NavLinks = ({ onClose }: { onClose?: () => void }) => {
+    const mainItems = navItems.filter((i) => i.name !== "Settings");
+    const prefItems = navItems.filter((i) => i.name === "Settings");
+
+    const renderItem = (item: (typeof navItems)[0]) => {
+      const isActive =
+        item.href === "/dashboard"
+          ? pathname === "/dashboard"
+          : pathname === item.href || pathname.startsWith(item.href + "/");
+      return (
+        <Link
+          key={item.name}
+          href={item.href}
+          onClick={onClose}
+          style={!isActive ? { color: "rgba(255,255,255,0.72)" } : undefined}
+          className={`group relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] transition-all duration-150 ${
+            isActive
+              ? "bg-violet-600 text-white font-semibold shadow-lg shadow-violet-900/50"
+              : "hover:bg-white/[0.08] hover:!text-white font-medium"
+          }`}
+        >
+          {isActive && (
+            <span className="absolute left-0 inset-y-2 w-[3px] rounded-r-full bg-violet-300/60" />
+          )}
+          <span
+            className="flex-shrink-0 transition-colors"
+            style={!isActive ? { color: "rgba(255,255,255,0.50)" } : { color: "rgba(221,214,254,1)" }}
           >
-            {/* Active left bar */}
-            {isActive && (
-              <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-violet-300 rounded-r-full" />
-            )}
-            <span
-              className={`flex-shrink-0 transition-colors ${
-                isActive ? "text-white" : "text-slate-400 group-hover:text-slate-200"
-              }`}
-            >
-              {item.icon}
-            </span>
-            <span className="flex-1">{item.name}</span>
-            {isActive && (
-              <ChevronRight size={14} className="text-violet-300 opacity-70" />
-            )}
-          </Link>
-        );
-      })}
-    </div>
-  );
+            {item.icon}
+          </span>
+          <span className="flex-1 tracking-wide">{item.name}</span>
+          {isActive && (
+            <span className="w-1.5 h-1.5 rounded-full bg-white/40 flex-shrink-0" />
+          )}
+        </Link>
+      );
+    };
+
+    return (
+      <div>
+        <p className="text-[10px] font-bold tracking-widest uppercase px-3 mb-2" style={{ color: "rgba(255,255,255,0.35)" }}>
+          Main Menu
+        </p>
+        <div className="space-y-0.5">
+          {mainItems.map(renderItem)}
+        </div>
+
+        {prefItems.length > 0 && (
+          <div className="mt-6">
+            <div className="mx-1 mb-4 h-px bg-white/[0.06]" />
+            <p className="text-[10px] font-bold tracking-widest uppercase px-3 mb-2" style={{ color: "rgba(255,255,255,0.35)" }}>
+              Preferences
+            </p>
+            <div className="space-y-0.5">
+              {prefItems.map(renderItem)}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-[#F0F2F8] flex font-sans text-slate-900">
-
       {/* ── Desktop Sidebar ─────────────────────────────────────────────────── */}
-      <aside className="hidden md:flex flex-col w-64 bg-[#0F172A] fixed h-full z-20 border-r border-white/5">
+      <aside className="hidden md:flex flex-col w-64 bg-[#0D1117] fixed h-full z-20 border-r border-white/[0.06]">
 
         {/* Logo */}
-        <div className="px-5 py-5 flex items-center gap-3 border-b border-white/8">
-          <div className="w-8 h-8 bg-gradient-to-br from-violet-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-violet-900/50 flex-shrink-0">
-            <Sparkles size={15} className="text-white" />
+        <div className="px-5 py-5 flex items-center gap-3 border-b border-white/[0.06]">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-900/50 flex-shrink-0">
+            <Sparkles size={16} className="text-white" />
           </div>
           <div>
-            <span className="text-white font-bold text-lg tracking-tight leading-none">
+            <p className="text-white font-black text-xl tracking-tight leading-none">
               APO<span className="text-violet-400">.</span>
-            </span>
-            <p className="text-slate-500 text-[10px] font-medium tracking-wider uppercase mt-0.5">
+            </p>
+            <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest mt-0.5">
               Project Officer
             </p>
           </div>
         </div>
 
-        {/* Nav label */}
-        <div className="px-5 pt-6 pb-2">
-          <p className="text-[10px] font-semibold text-slate-600 uppercase tracking-widest">
-            Navigation
-          </p>
-        </div>
-
-        {/* Nav links */}
-        <nav className="flex-1 px-3 pb-4 overflow-y-auto">
+        {/* Nav */}
+        <nav className="flex-1 px-3 py-5 overflow-y-auto">
           <NavLinks />
         </nav>
 
-        {/* User profile footer */}
-        <div className="p-3 border-t border-white/8">
-          <div className="flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-white/5 transition-colors group">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0 overflow-hidden">
-              {avatarUrl ? (
-                <img
-                  src={avatarUrl}
-                  alt="Avatar"
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                userInitials
-              )}
+        {/* User card */}
+        <div className="p-3 border-t border-white/[0.06]">
+          <div className="rounded-xl bg-white/[0.04] border border-white/[0.06] p-3">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0 overflow-hidden">
+                {avatarUrl ? (
+                  <img
+                    src={avatarUrl}
+                    alt="Avatar"
+                    className="w-full h-full object-cover"
+                    onError={() => setAvatarUrl(null)}
+                  />
+                ) : (
+                  userInitials
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-white text-xs font-semibold truncate leading-tight">
+                  {userName || "My Account"}
+                </p>
+                <p className="text-slate-600 text-[10px] truncate">{userEmail}</p>
+              </div>
+              <button
+                onClick={handleSignOut}
+                disabled={isSigningOut}
+                className="p-1.5 text-slate-600 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition-all disabled:opacity-50 flex-shrink-0"
+                title="Sign out"
+              >
+                {isSigningOut ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <LogOut size={14} />
+                )}
+              </button>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-white text-xs font-semibold truncate leading-tight">
-                {userName || "My Account"}
-              </p>
-              <p className="text-slate-500 text-[10px] truncate">{userEmail}</p>
-              {userRole && (
-                <span className={`inline-block text-[9px] font-bold px-1.5 py-0.5 rounded-full mt-0.5 ${
-                  userRole === "owner" ? "bg-violet-900/60 text-violet-300" :
-                  userRole === "pm"    ? "bg-indigo-900/60 text-indigo-300" :
-                  "bg-slate-700/60 text-slate-400"
+
+            {userRole && (
+              <div className="mt-2.5 pt-2.5 border-t border-white/[0.06]">
+                <span className={`inline-flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                  userRole === "owner"
+                    ? "bg-violet-500/20 text-violet-300"
+                    : userRole === "pm"
+                      ? "bg-indigo-500/20 text-indigo-300"
+                      : userRole === "client"
+                        ? "bg-emerald-500/20 text-emerald-300"
+                        : "bg-slate-700/40 text-slate-400"
                 }`}>
-                  {userRole === "owner" ? "Owner" : userRole === "pm" ? "Project Manager" : "Team Member"}
+                  {userRole === "owner" && <Crown size={9} />}
+                  {userRole === "pm" && <ShieldCheck size={9} />}
+                  {userRole === "owner"
+                    ? "Owner"
+                    : userRole === "pm"
+                      ? "Project Manager"
+                      : userRole === "client"
+                        ? "Client"
+                        : "Team Member"}
                 </span>
-              )}
-            </div>
-            <button
-              onClick={handleSignOut}
-              disabled={isSigningOut}
-              className="p-1.5 text-slate-600 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition-all disabled:opacity-50"
-              title="Sign out"
-            >
-              {isSigningOut ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : (
-                <LogOut size={14} />
-              )}
-            </button>
+              </div>
+            )}
           </div>
         </div>
       </aside>
@@ -394,44 +494,55 @@ export default function DashboardLayout({
       {isMobileMenuOpen && (
         <div className="fixed inset-0 z-40 md:hidden">
           <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
             onClick={() => setIsMobileMenuOpen(false)}
           />
-          <aside className="absolute left-0 top-0 h-full w-72 bg-[#0F172A] shadow-2xl flex flex-col border-r border-white/5">
-            <div className="px-5 py-5 flex items-center justify-between border-b border-white/8">
+          <aside className="absolute left-0 top-0 h-full w-72 bg-[#0D1117] shadow-2xl flex flex-col border-r border-white/[0.06]">
+            {/* Mobile logo */}
+            <div className="px-5 py-5 flex items-center justify-between border-b border-white/[0.06]">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-gradient-to-br from-violet-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-violet-900/50">
-                  <Sparkles size={15} className="text-white" />
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-900/50">
+                  <Sparkles size={16} className="text-white" />
                 </div>
-                <span className="text-white font-bold text-lg tracking-tight">
+                <p className="text-white font-black text-xl tracking-tight leading-none">
                   APO<span className="text-violet-400">.</span>
-                </span>
+                </p>
               </div>
               <button
                 onClick={() => setIsMobileMenuOpen(false)}
-                className="p-2 hover:bg-white/10 rounded-lg transition-colors text-slate-400"
+                className="p-2 hover:bg-white/[0.08] rounded-xl transition-colors text-slate-500 hover:text-white"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <nav className="flex-1 px-3 py-4 overflow-y-auto">
+            <nav className="flex-1 px-3 py-5 overflow-y-auto">
               <NavLinks onClose={() => setIsMobileMenuOpen(false)} />
             </nav>
 
-            <div className="p-3 border-t border-white/8">
-              <button
-                onClick={handleSignOut}
-                disabled={isSigningOut}
-                className="flex items-center gap-3 px-3 py-2.5 w-full rounded-xl text-sm font-medium text-slate-400 hover:bg-red-900/20 hover:text-red-400 transition-all disabled:opacity-50"
-              >
-                {isSigningOut ? (
-                  <Loader2 size={18} className="animate-spin" />
-                ) : (
-                  <LogOut size={18} />
-                )}
-                {isSigningOut ? "Signing out…" : "Sign Out"}
-              </button>
+            {/* Mobile user card */}
+            <div className="p-3 border-t border-white/[0.06]">
+              <div className="rounded-xl bg-white/[0.04] border border-white/[0.06] p-3 flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0 overflow-hidden">
+                  {avatarUrl ? (
+                    <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" onError={() => setAvatarUrl(null)} />
+                  ) : (
+                    userInitials
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-white text-xs font-semibold truncate">{userName || "My Account"}</p>
+                  <p className="text-slate-600 text-[10px] truncate">{userEmail}</p>
+                </div>
+                <button
+                  onClick={handleSignOut}
+                  disabled={isSigningOut}
+                  className="flex items-center gap-2 px-2.5 py-1.5 text-xs font-semibold text-slate-500 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition-all"
+                >
+                  {isSigningOut ? <Loader2 size={13} className="animate-spin" /> : <LogOut size={13} />}
+                  {isSigningOut ? "…" : "Out"}
+                </button>
+              </div>
             </div>
           </aside>
         </div>
@@ -439,10 +550,8 @@ export default function DashboardLayout({
 
       {/* ── Main Content ────────────────────────────────────────────────────── */}
       <main className="flex-1 md:ml-64 flex flex-col min-h-screen">
-
         {/* Top header */}
-        <header className="h-16 bg-white/80 backdrop-blur-md border-b border-slate-200/80 flex items-center justify-between px-6 sticky top-0 z-10 shadow-sm">
-
+        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 sticky top-0 z-50 shadow-sm">
           {/* Hamburger (mobile) */}
           <button
             className="md:hidden text-slate-500 hover:text-slate-900 transition-colors p-1"
@@ -458,13 +567,31 @@ export default function DashboardLayout({
           <div className="flex items-center gap-2">
             {/* Role pill */}
             {userRole && (
-              <span className={`hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${
-                userRole === "owner"  ? "bg-violet-50 text-violet-700 border-violet-200" :
-                userRole === "pm"     ? "bg-indigo-50 text-indigo-700 border-indigo-200" :
-                                        "bg-slate-50  text-slate-600  border-slate-200"
-              }`}>
-                {userRole === "owner" ? <Crown size={11} /> : userRole === "pm" ? <ShieldCheck size={11} /> : <Briefcase size={11} />}
-                {userRole === "owner" ? "Owner" : userRole === "pm" ? "Project Manager" : "Team Member"}
+              <span
+                className={`hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${
+                  userRole === "owner"
+                    ? "bg-violet-50 text-violet-700 border-violet-200"
+                    : userRole === "pm"
+                      ? "bg-indigo-50 text-indigo-700 border-indigo-200"
+                      : userRole === "client"
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                        : "bg-slate-50  text-slate-600  border-slate-200"
+                }`}
+              >
+                {userRole === "owner" ? (
+                  <Crown size={11} />
+                ) : userRole === "pm" ? (
+                  <ShieldCheck size={11} />
+                ) : (
+                  <Briefcase size={11} />
+                )}
+                {userRole === "owner"
+                  ? "Owner"
+                  : userRole === "pm"
+                    ? "Project Manager"
+                    : userRole === "client"
+                      ? "Client"
+                      : "Team Member"}
               </span>
             )}
             {/* Notification bell */}
@@ -486,9 +613,13 @@ export default function DashboardLayout({
                   <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
                     <div className="flex items-center gap-2">
                       <Bell size={14} className="text-slate-500" />
-                      <span className="font-bold text-slate-900 text-sm">Notifications</span>
+                      <span className="font-bold text-slate-900 text-sm">
+                        Notifications
+                      </span>
                       {notifCount > 0 && (
-                        <span className="px-1.5 py-0.5 bg-red-100 text-red-600 text-[10px] font-bold rounded-full">{notifCount}</span>
+                        <span className="px-1.5 py-0.5 bg-red-100 text-red-600 text-[10px] font-bold rounded-full">
+                          {notifCount}
+                        </span>
                       )}
                     </div>
                     {notifCount > 0 && (
@@ -520,11 +651,21 @@ export default function DashboardLayout({
                           }}
                         >
                           <div className="flex items-start gap-3">
-                            <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${!n.is_read ? "bg-indigo-500" : "bg-slate-200"}`} />
+                            <div
+                              className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${!n.is_read ? "bg-indigo-500" : "bg-slate-200"}`}
+                            />
                             <div className="flex-1 min-w-0">
-                              <p className={`text-sm font-semibold leading-tight ${!n.is_read ? "text-slate-900" : "text-slate-600"}`}>{n.title}</p>
-                              <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{n.body}</p>
-                              <p className="text-[10px] text-slate-400 mt-1">{fmtTimeAgo(n.created_at)}</p>
+                              <p
+                                className={`text-sm font-semibold leading-tight ${!n.is_read ? "text-slate-900" : "text-slate-600"}`}
+                              >
+                                {n.title}
+                              </p>
+                              <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">
+                                {n.body}
+                              </p>
+                              <p className="text-[10px] text-slate-400 mt-1">
+                                {fmtTimeAgo(n.created_at)}
+                              </p>
                             </div>
                           </div>
                         </div>
@@ -546,82 +687,155 @@ export default function DashboardLayout({
                     src={avatarUrl}
                     alt="Avatar"
                     className="w-full h-full object-cover"
+                    onError={() => setAvatarUrl(null)}
                   />
                 ) : (
                   userInitials
                 )}
                 {isUploading && (
                   <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
-                    <Loader2 size={14} className="animate-spin text-violet-600" />
+                    <Loader2
+                      size={14}
+                      className="animate-spin text-violet-600"
+                    />
                   </div>
                 )}
               </button>
 
               {isDropdownOpen && (
-                <div className="absolute right-0 mt-2 w-60 bg-white border border-slate-200 rounded-2xl shadow-2xl shadow-slate-200/80 overflow-hidden py-2 z-50">
-                  {/* User info */}
-                  <div className="px-4 py-3 border-b border-slate-100">
+                <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200/80 rounded-2xl shadow-2xl shadow-slate-300/40 overflow-hidden z-50">
+                  {/* Avatar hero header */}
+                  <div className="relative bg-gradient-to-br from-violet-600 to-indigo-700 px-5 pt-5 pb-10">
                     <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white text-xs font-bold overflow-hidden flex-shrink-0">
-                        {avatarUrl ? (
-                          <img
-                            src={avatarUrl}
-                            alt="Avatar"
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          userInitials
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-bold text-slate-900 truncate">
+                      {/* Avatar with upload overlay on hover */}
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="relative group flex-shrink-0"
+                        title="Change photo"
+                      >
+                        <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center text-white text-sm font-bold overflow-hidden ring-2 ring-white/30">
+                          {avatarUrl ? (
+                            <img
+                              src={avatarUrl}
+                              alt="Avatar"
+                              className="w-full h-full object-cover"
+                              onError={() => setAvatarUrl(null)}
+                            />
+                          ) : (
+                            userInitials
+                          )}
+                        </div>
+                        <div className="absolute inset-0 rounded-xl bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                          {isUploading ? (
+                            <Loader2
+                              size={14}
+                              className="animate-spin text-white"
+                            />
+                          ) : (
+                            <Camera size={14} className="text-white" />
+                          )}
+                        </div>
+                      </button>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-bold text-white truncate leading-tight">
                           {userName || "My Account"}
                         </p>
-                        <p className="text-xs text-slate-400 truncate">
+                        <p className="text-xs text-white/60 truncate mt-0.5">
                           {userEmail}
                         </p>
+                        {userRole && (
+                          <span
+                            className={`inline-block text-[9px] font-bold px-1.5 py-0.5 rounded-full mt-1 ${
+                              userRole === "owner"
+                                ? "bg-violet-900/60 text-violet-200"
+                                : userRole === "pm"
+                                  ? "bg-indigo-900/60 text-indigo-200"
+                                  : userRole === "client"
+                                    ? "bg-emerald-900/60 text-emerald-200"
+                                    : "bg-white/20 text-white/70"
+                            }`}
+                          >
+                            {userRole === "owner"
+                              ? "Owner"
+                              : userRole === "pm"
+                                ? "Project Manager"
+                                : userRole === "client"
+                                  ? "Client"
+                                  : "Team Member"}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
 
-                  <Link
-                    href="/dashboard/settings"
-                    onClick={() => setIsDropdownOpen(false)}
-                    className="flex items-center gap-3 px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 hover:text-violet-600 transition-colors"
-                  >
-                    <Settings size={15} />
-                    Profile &amp; Settings
-                  </Link>
+                  {/* Floating avatar bump */}
+                  <div className="-mt-5 px-5 mb-2">
+                    <div className="bg-white rounded-xl shadow-sm border border-slate-100 px-3 py-2 flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" />
+                      <span className="text-xs text-slate-500 font-medium">
+                        Online
+                      </span>
+                    </div>
+                  </div>
 
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 hover:text-violet-600 transition-colors text-left"
-                  >
-                    <Camera size={15} />
-                    Upload Picture
-                  </button>
-                  <input
-                    type="file"
-                    accept="image/jpeg, image/png, image/webp"
-                    className="hidden"
-                    ref={fileInputRef}
-                    onChange={handleAvatarUpload}
-                  />
+                  {/* Menu items */}
+                  <div className="px-2 pb-2 space-y-0.5">
+                    <Link
+                      href="/dashboard/settings"
+                      onClick={() => setIsDropdownOpen(false)}
+                      className="flex items-center gap-3 px-3 py-2.5 text-sm text-slate-700 hover:bg-violet-50 hover:text-violet-700 rounded-xl transition-colors font-medium"
+                    >
+                      <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
+                        <Settings size={14} className="text-slate-500" />
+                      </div>
+                      Profile &amp; Settings
+                    </Link>
 
-                  <div className="h-px bg-slate-100 my-1" />
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-slate-700 hover:bg-violet-50 hover:text-violet-700 rounded-xl transition-colors text-left font-medium"
+                    >
+                      <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
+                        {isUploading ? (
+                          <Loader2
+                            size={14}
+                            className="animate-spin text-violet-500"
+                          />
+                        ) : (
+                          <Camera size={14} className="text-slate-500" />
+                        )}
+                      </div>
+                      {isUploading ? "Uploading…" : "Change Photo"}
+                    </button>
 
-                  <button
-                    onClick={handleSignOut}
-                    disabled={isSigningOut}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors text-left disabled:opacity-50"
-                  >
-                    {isSigningOut ? (
-                      <Loader2 size={15} className="animate-spin" />
-                    ) : (
-                      <LogOut size={15} />
-                    )}
-                    Sign Out
-                  </button>
+                    <input
+                      type="file"
+                      accept="image/jpeg, image/png, image/webp"
+                      className="hidden"
+                      ref={fileInputRef}
+                      onChange={handleAvatarUpload}
+                    />
+
+                    <div className="h-px bg-slate-100 mx-1 my-1" />
+
+                    <button
+                      onClick={handleSignOut}
+                      disabled={isSigningOut}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-red-500 hover:bg-red-50 rounded-xl transition-colors text-left font-medium disabled:opacity-50"
+                    >
+                      <div className="w-7 h-7 rounded-lg bg-red-50 flex items-center justify-center flex-shrink-0">
+                        {isSigningOut ? (
+                          <Loader2
+                            size={14}
+                            className="animate-spin text-red-500"
+                          />
+                        ) : (
+                          <LogOut size={14} className="text-red-500" />
+                        )}
+                      </div>
+                      {isSigningOut ? "Signing out…" : "Sign Out"}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

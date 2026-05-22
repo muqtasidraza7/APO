@@ -102,6 +102,12 @@ function avatarColor(id: string) {
   return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 }
 
+const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+
+function resolveIds(text: string, memberMap: Record<string, string>): string {
+  return text.replace(UUID_RE, id => memberMap[id] ?? id);
+}
+
 function groupAssignments(assignments: Assignment[]): MilestoneGroup[] {
   const map = new Map<string, MilestoneGroup>();
   for (const a of assignments) {
@@ -355,6 +361,8 @@ export default function AllocationClient() {
   // ── Derived stats ────────────────────────────────────────────────────────────
 
   const grouped = data ? groupAssignments(data.assignments) : [];
+  const memberNameMap: Record<string, string> = {};
+  (data?.teamMembers ?? []).forEach(m => { memberNameMap[m.id] = m.full_name || m.job_title || m.id; });
   const assignedMilestoneCount = grouped.length;
   const totalMilestones = data?.milestones?.length ?? 0;
   const unassigned = totalMilestones - assignedMilestoneCount;
@@ -685,32 +693,40 @@ export default function AllocationClient() {
                               </div>
                             ) : (
                               /* Member chips */
-                              <div className="flex flex-wrap gap-2">
-                                {group.members.map(({ id, member, match_reason }) => (
-                                  <div
-                                    key={id}
-                                    className="group relative flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 hover:border-indigo-200 hover:bg-indigo-50/50 transition-all cursor-default"
-                                    title={match_reason}
-                                  >
-                                    <div className={`w-7 h-7 rounded-full text-[10px] font-black flex items-center justify-center flex-shrink-0 ${avatarColor(id)}`}>
-                                      {initials(member?.full_name || member?.job_title || "?")}
-                                    </div>
-                                    <div className="min-w-0">
-                                      <div className="text-xs font-bold text-slate-800 whitespace-nowrap">
-                                        {member?.full_name || member?.job_title || "Unknown"}
+                              <div className="space-y-3">
+                                <div className="flex flex-wrap gap-2">
+                                  {group.members.map(({ id, member }) => (
+                                    <div
+                                      key={id}
+                                      className="flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 hover:border-indigo-200 hover:bg-indigo-50/50 transition-all cursor-default"
+                                    >
+                                      <div className={`w-7 h-7 rounded-full text-[10px] font-black flex items-center justify-center flex-shrink-0 ${avatarColor(id)}`}>
+                                        {initials(member?.full_name || member?.job_title || "?")}
                                       </div>
-                                      <div className="text-[10px] text-slate-400 whitespace-nowrap">
-                                        {member?.job_title || ""}
-                                        {member?.capacity_hours_per_week ? ` · ${member.capacity_hours_per_week}h/wk` : ""}
+                                      <div className="min-w-0">
+                                        <div className="text-xs font-bold text-slate-800 whitespace-nowrap">
+                                          {member?.full_name || member?.job_title || "Unknown"}
+                                        </div>
+                                        <div className="text-[10px] text-slate-400 whitespace-nowrap">
+                                          {member?.job_title || ""}
+                                          {member?.capacity_hours_per_week ? ` · ${member.capacity_hours_per_week}h/wk` : ""}
+                                        </div>
                                       </div>
                                     </div>
-                                    {/* Tooltip on hover */}
-                                    <div className="absolute bottom-full left-0 mb-2 w-64 bg-slate-900 text-white text-[10px] rounded-lg px-3 py-2 shadow-xl z-20 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity leading-relaxed">
-                                      <Sparkles size={8} className="inline mr-1 text-indigo-400" />
-                                      {match_reason}
+                                  ))}
+                                </div>
+                                {/* AI Rationale panel */}
+                                {group.members[0]?.match_reason && (
+                                  <div className="bg-indigo-50/60 border border-indigo-100 rounded-xl px-3 py-2.5">
+                                    <div className="flex items-center gap-1.5 mb-1.5">
+                                      <Sparkles size={10} className="text-indigo-400 flex-shrink-0" />
+                                      <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider">AI Rationale</span>
                                     </div>
+                                    <p className="text-[11px] text-indigo-800 leading-relaxed whitespace-pre-line">
+                                      {resolveIds(group.members[0].match_reason, memberNameMap)}
+                                    </p>
                                   </div>
-                                ))}
+                                )}
                               </div>
                             )}
                           </div>
