@@ -763,46 +763,6 @@ export default function AllocationClient() {
                 </div>
               )}
 
-              {/* Team utilization summary */}
-              {data.teamMembers.filter(m => memberLoad[m.id]).length > 0 && (
-                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                  <h3 className="font-black text-slate-900 mb-4 flex items-center gap-2">
-                    <BarChart2 size={15} className="text-indigo-500" /> Team Utilization
-                  </h3>
-                  <div className="space-y-3">
-                    {data.teamMembers
-                      .filter(m => memberLoad[m.id])
-                      .sort((a, b) => (memberLoad[b.id] || 0) - (memberLoad[a.id] || 0))
-                      .map(m => {
-                        const milestoneCount = memberLoad[m.id] || 0;
-                        const usedHrs = milestoneCount * 20;
-                        const capHrs = m.capacity_hours_per_week || 40;
-                        const pct = Math.min(100, Math.round((usedHrs / capHrs) * 100));
-                        const barColor = pct > 90 ? "bg-red-500" : pct > 70 ? "bg-amber-500" : "bg-indigo-500";
-                        const textColor = pct > 90 ? "text-red-600" : pct > 70 ? "text-amber-600" : "text-indigo-600";
-                        return (
-                          <div key={m.id} className="flex items-center gap-3">
-                            <div className={`w-7 h-7 rounded-full text-[10px] font-black flex items-center justify-center flex-shrink-0 ${avatarColor(m.id)}`}>
-                              {initials(m.full_name || m.job_title)}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between mb-1">
-                                <span className="text-xs font-semibold text-slate-700 truncate">{m.full_name || m.job_title}</span>
-                                <span className={`text-[11px] font-black ml-2 flex-shrink-0 ${textColor}`}>{pct}%</span>
-                              </div>
-                              <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
-                              </div>
-                            </div>
-                            <div className="text-[10px] text-slate-400 w-20 text-right flex-shrink-0">
-                              {milestoneCount} task{milestoneCount !== 1 ? "s" : ""} · {capHrs}h cap
-                            </div>
-                          </div>
-                        );
-                      })}
-                  </div>
-                </div>
-              )}
             </>
           )}
         </div>
