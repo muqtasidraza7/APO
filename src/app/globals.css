@@ -2,40 +2,57 @@
 
 
 :root {
-  /* Brand Colors - Modern Indigo Theme */
-  --color-primary: #ffffff;   /* Clean white background */
-  --color-accent: #4f46e5;    /* Indigo - vibrant and modern */
-  --color-accent-hover: #4338ca; /* Darker indigo on hover */
-  --color-accent-light: #eef2ff; /* Very light indigo/blue for backgrounds */
-  --color-surface: #f8fafc;   /* Soft light gray for sections */
-  --color-surface-hover: #f1f5f9; /* Slightly darker surface */
-  --color-text: #1e293b;      /* Dark slate for text readability */
-  --color-text-light: #64748b; /* Lighter gray for secondary text */
-  --color-text-lighter: #94a3b8; /* Even lighter for tertiary text */
-  --color-muted: #cbd5e1;     /* Muted light gray */
-  --color-border: #e2e8f0;    /* Clean border color */
-  --color-border-light: #f1f5f9; /* Lighter border */
+  /* ── Public / Landing palette ─────────────────────────────────────────── */
+  --color-primary: #ffffff;
+  --color-accent: #4f46e5;
+  --color-accent-hover: #4338ca;
+  --color-accent-light: #eef2ff;
+  --color-surface: #f8fafc;
+  --color-surface-hover: #f1f5f9;
+  --color-text: #1e293b;
+  --color-text-light: #64748b;
+  --color-text-lighter: #94a3b8;
+  --color-muted: #cbd5e1;
+  --color-border: #e2e8f0;
+  --color-border-light: #f1f5f9;
 
-  /* Layout & Style */
-  --radius: 0.5rem;           /* More refined rounded corners */
+  /* ── Dashboard palette ────────────────────────────────────────────────── */
+  --dash-sidebar-bg: #0F172A;
+  /* Deep navy */
+  --dash-sidebar-border: rgba(255, 255, 255, 0.06);
+  --dash-sidebar-active: #7C3AED;
+  /* Violet */
+  --dash-sidebar-active-shadow: rgba(124, 58, 237, 0.35);
+  --dash-sidebar-text: #94A3B8;
+  /* Slate-400 */
+  --dash-sidebar-text-hover: #F1F5F9;
+  --dash-bg: #F0F2F8;
+  /* Cool off-white page bg */
+  --dash-card-bg: #FFFFFF;
+  --dash-card-border: #E8ECF4;
+  --dash-violet: #7C3AED;
+  --dash-violet-light: #EDE9FE;
+  --dash-cyan: #06B6D4;
+  --dash-cyan-light: #ECFEFF;
+
+  /* ── Shared ───────────────────────────────────────────────────────────── */
+  --radius: 0.5rem;
   --radius-lg: 0.75rem;
   --transition: 200ms ease-in-out;
 
-  /* Shadows - Minimal & elegant (indigo-tinted) */
   --shadow-xs: 0 1px 2px rgba(79, 70, 229, 0.04);
   --shadow-soft: 0 1px 3px rgba(79, 70, 229, 0.06);
   --shadow-md: 0 4px 12px rgba(79, 70, 229, 0.08);
   --shadow-lg: 0 8px 24px rgba(79, 70, 229, 0.12);
+  --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.06), 0 4px 16px rgba(15, 23, 42, 0.04);
 }
 
 /* Clean white background with ultra-subtle accents */
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background: linear-gradient(
-      180deg,
+  background: linear-gradient(180deg,
       rgba(79, 70, 229, 0.02),
-      rgba(248, 250, 252, 0.5)
-    ),
+      rgba(248, 250, 252, 0.5)),
     var(--color-primary);
   color: var(--color-text);
   transition: background var(--transition), color var(--transition);
@@ -60,7 +77,13 @@ a {
 }
 
 @layer base {
-  h1, h2, h3, h4, h5, h6 {
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
     font-weight: 700;
     color: var(--color-text);
     line-height: 1.3;
@@ -85,6 +108,7 @@ a {
 }
 
 @layer utilities {
+
   /* Button Base Styles */
   .btn {
     display: inline-flex;
@@ -106,10 +130,12 @@ a {
     background: var(--color-accent);
     color: white;
   }
+
   .btn-primary:hover {
     background: var(--color-accent-hover);
     box-shadow: var(--shadow-md);
   }
+
   .btn-primary:active {
     transform: scale(0.98);
   }
@@ -120,6 +146,7 @@ a {
     color: var(--color-text);
     background: white;
   }
+
   .btn-outline:hover {
     background: var(--color-surface);
     border-color: var(--color-border-light);
@@ -131,6 +158,7 @@ a {
     background: var(--color-accent-light);
     color: var(--color-accent);
   }
+
   .btn-secondary:hover {
     background: rgba(79, 70, 229, 0.08);
   }
@@ -142,6 +170,7 @@ a {
     transition: color var(--transition);
     color: var(--color-text-light);
   }
+
   .nav-link:hover {
     color: var(--color-accent);
   }
@@ -168,6 +197,7 @@ a {
     transition: var(--transition);
     box-shadow: var(--shadow-xs);
   }
+
   .card:hover {
     border-color: var(--color-accent-light);
     box-shadow: var(--shadow-soft);
@@ -198,4 +228,26 @@ a {
     background: var(--color-accent-light);
     color: var(--color-accent);
   }
+}
+
+/* ── Dashboard card ──────────────────────────────────────────────────────── */
+.dash-card {
+  background: var(--dash-card-bg);
+  border: 1px solid var(--dash-card-border);
+  border-radius: 1rem;
+  box-shadow: var(--shadow-card);
+}
+
+/* ── Sidebar hover utility (Tailwind can't do CSS-var opacity easily) ─────── */
+.sidebar-item-hover:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ── Subtle page background grid ─────────────────────────────────────────── */
+.dash-bg-grid {
+  background-color: var(--dash-bg);
+  background-image:
+    linear-gradient(rgba(124, 58, 237, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(124, 58, 237, 0.03) 1px, transparent 1px);
+  background-size: 32px 32px;
 }

@@ -63,8 +63,8 @@ export default function DeleteProjectButton({ projectId, projectName }: DeletePr
                   <AlertTriangle size={20} className="text-red-600" />
                 </div>
                 <div>
-                  <h2 className="font-bold text-slate-900">Delete Project</h2>
-                  <p className="text-xs text-slate-500">This action cannot be undone</p>
+                  <h2 className="font-bold text-slate-900">Move to Trash</h2>
+                  <p className="text-xs text-slate-500">Recoverable for 30 days</p>
                 </div>
               </div>
               <button
@@ -78,15 +78,15 @@ export default function DeleteProjectButton({ projectId, projectName }: DeletePr
             {/* Body */}
             <div className="p-6 space-y-5">
               <p className="text-sm text-slate-600 leading-relaxed">
-                You are about to permanently delete{" "}
-                <span className="font-bold text-slate-900">"{projectName}"</span>.
-                This will remove all tasks, assignments, timelines, and financial data associated with this project.
+                You are about to move{" "}
+                <span className="font-bold text-slate-900">"{projectName}"</span>{" "}
+                to trash. It will be recoverable from the Projects page for 30 days, then permanently deleted.
               </p>
 
               <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">
-                <p className="text-xs font-semibold text-amber-800 mb-1">⚠ Warning</p>
+                <p className="text-xs font-semibold text-amber-800 mb-1">30-day recovery window</p>
                 <p className="text-xs text-amber-700">
-                  All AI-generated data, team assignments, and budget forecasts will be permanently lost.
+                  Any workspace admin can restore this project within 30 days. After that, all AI data, team assignments, and budget forecasts are permanently removed.
                 </p>
               </div>
 
@@ -125,9 +125,9 @@ export default function DeleteProjectButton({ projectId, projectName }: DeletePr
                 className="flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-red-200 disabled:cursor-not-allowed text-white rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2"
               >
                 {isPending ? (
-                  <><Loader2 size={15} className="animate-spin" /> Deleting…</>
+                  <><Loader2 size={15} className="animate-spin" /> Moving to Trash…</>
                 ) : (
-                  <><Trash2 size={15} /> Delete Project</>
+                  <><Trash2 size={15} /> Move to Trash</>
                 )}
               </button>
             </div>

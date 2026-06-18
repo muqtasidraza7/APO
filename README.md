@@ -1,36 +1,98 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# APO — AI-Powered Project Orchestrator
+
+APO is a project management platform for software teams that uses AI to allocate team members to milestones, track sprint progress, analyze costs, and surface actionable insights — all in one workspace.
+
+## Features
+
+- **AI Allocation** — Automatically assigns team members to milestones based on skills, availability, and dependencies using LangChain + Groq
+- **Sprint Management** — Create and manage sprints with task tracking, burndown, and velocity metrics
+- **Analytics** — Cost breakdowns, expense tracking, and project health insights
+- **Team Management** — Role-based access (Owner, PM, Member, Client) with invite links
+- **Messaging** — Slack-style threaded channels with @mentions and role-based access
+- **Notifications** — Real-time bell notifications for task assignments, mentions, and project events
+- **Onboarding** — Invite-link based onboarding with role pre-fill
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Framework | Next.js 15 (App Router) |
+| Language | TypeScript |
+| Database & Auth | Supabase (PostgreSQL + RLS) |
+| AI | LangChain + Groq (llama-3.3-70b) |
+| Styling | Tailwind CSS v4 |
+| Charts | Recharts |
+| Animations | Framer Motion |
+| Schema Validation | Zod |
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+- Node.js 18+
+- A [Supabase](https://supabase.com) project
+- A [Groq](https://console.groq.com) API key
+
+### Installation
+
+```bash
+npm install
+```
+
+### Environment Variables
+
+Create a `.env.local` file in the root with the following:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+GROQ_API_KEY=your_groq_api_key
+```
+
+### Development
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Build
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run build
+npm start
+```
 
-## Learn More
+## Deployment
 
-To learn more about Next.js, take a look at the following resources:
+Deploy to [Vercel](https://vercel.com) by connecting your GitHub repository and adding the environment variables above in the Vercel project settings.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Project Structure
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+src/
+  app/
+    (auth)/         # Login, register, forgot/reset password
+    (dashboard)/    # All authenticated dashboard pages
+      dashboard/
+        projects/   # Project detail, sprints, allocation, analytics
+        team/       # Team management
+        insights/   # Workspace analytics
+    api/            # API route handlers
+    components/     # Shared UI components
+    onboarding/     # New user + invite onboarding flow
+    utils/          # Supabase clients, schemas, helpers
+```
 
-## Deploy on Vercel
+## Role Permissions
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Feature | Owner | PM | Member | Client |
+|---|---|---|---|---|
+| Create projects | Yes | Yes | No | No |
+| Manage team | Yes | Yes | No | No |
+| View analytics | Yes | Yes | No | No |
+| View sprints | Yes | Yes | Yes | No |
+| View allocation | Yes | Yes | Yes | No |
+| Client view | Yes | Yes | No | Yes |

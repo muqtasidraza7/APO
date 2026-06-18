@@ -24,7 +24,7 @@ interface Project {
 interface AssignResult {
     task_title?: string;
     task_name?: string;
-    assigned_to_name: string;
+    assigned_to_names: string[];
     reasoning: string;
 }
 
@@ -215,7 +215,7 @@ export default function AIAssignPanel({ workspaceId, teamMemberCount }: AIAssign
                                         <div className="flex items-start justify-between gap-2 mb-1">
                                             <span className="font-semibold text-slate-900 text-sm">{r.task_title || r.task_name}</span>
                                             <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0">
-                                                → {r.assigned_to_name}
+                                                → {(r.assigned_to_names || []).join(", ")}
                                             </span>
                                         </div>
                                         <p className="text-xs text-slate-500 italic">{r.reasoning}</p>

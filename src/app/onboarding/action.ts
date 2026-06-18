@@ -32,14 +32,13 @@ export async function createWorkspace(workspaceName: string, skillProfile?: Skil
     .single();
 
   if (wsError) {
-    console.error("Workspace Error:", wsError.message);
     return { error: `Failed to create workspace: ${wsError.message}` };
   }
 
   const memberData: Record<string, unknown> = {
     workspace_id: workspace.id,
     user_id: user.id,
-    role: "PM",
+    role: "pm",
   };
 
   if (skillProfile) {
@@ -48,7 +47,6 @@ export async function createWorkspace(workspaceName: string, skillProfile?: Skil
     if (skillProfile.experience_level) memberData.experience_level = skillProfile.experience_level;
     if (skillProfile.years_of_experience) memberData.years_of_experience = skillProfile.years_of_experience;
     if (skillProfile.cv_url) memberData.user_cv_url = skillProfile.cv_url;
-    if (skillProfile.capacity_hours_per_week) memberData.capacity_hours_per_week = skillProfile.capacity_hours_per_week;
   }
 
   const { error: memberError } = await supabase
@@ -56,35 +54,30 @@ export async function createWorkspace(workspaceName: string, skillProfile?: Skil
     .insert(memberData);
 
   if (memberError) {
-    console.error("Member Error:", memberError.message);
     return { error: "Failed to join workspace" };
   }
 
-  // 1.5 Fix: Also add to team_members table for SCRUM/Messaging
+  // Insert owner into team_members so they appear in their own team dashboard
   const teamMemberData = {
     workspace_id: workspace.id,
     user_id: user.id,
     full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || "Admin",
-    email: user.email,
     job_title: skillProfile?.job_title || "Project Manager",
     capacity_hours_per_week: skillProfile?.capacity_hours_per_week || 40,
     status: "online",
     skills: skillProfile?.skills || []
   };
 
-  const { error: teamError } = await supabase
-    .from("team_members")
-    .insert(teamMemberData);
-
-  if (teamError) {
-    console.error("Team Member Error:", teamError.message);
-    // Not a fatal error for onboarding, but good to log
+  const { error: tmError } = await supabase.from("team_members").insert(teamMemberData);
+  if (tmError) {
+    console.error("[createWorkspace] team_members insert failed:", tmError.message);
+    // Non-fatal: workspace was created — user can still access dashboard
   }
 
   redirect("/dashboard");
 }
 
-export async function joinWorkspace(workspaceId: string, skillProfile?: SkillProfile) {
+export async function joinWorkspace(workspaceId: string, skillProfile?: SkillProfile, inviteRole?: string) {
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -94,12 +87,10 @@ export async function joinWorkspace(workspaceId: string, skillProfile?: SkillPro
   }
 
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    console.error("SUPABASE_SERVICE_ROLE_KEY is not set in .env");
     return { error: "Server configuration error. Please contact support." };
   }
 
   const adminSupabase = createAdminClient();
-  // Extract just the UUID whether user pasted a full URL or just the ID
   let trimmedId = workspaceId.trim();
   try {
     const url = new URL(trimmedId);
@@ -109,9 +100,6 @@ export async function joinWorkspace(workspaceId: string, skillProfile?: SkillPro
     // Not a URL, use value as-is
   }
 
-  console.log("Attempting to join workspace ID:", trimmedId);
-
-  // Use admin client to bypass RLS — new users can't see workspaces they don't own yet
   const { data: workspace, error: wsError } = await adminSupabase
     .from("workspaces")
     .select("id")
@@ -119,11 +107,8 @@ export async function joinWorkspace(workspaceId: string, skillProfile?: SkillPro
     .single();
 
   if (wsError || !workspace) {
-    console.error("Workspace lookup failed:", wsError?.message, wsError?.code, "| ID:", trimmedId);
     return { error: "Workspace not found or invalid ID" };
   }
-
-  console.log("Workspace found:", workspace.id);
 
   // Check if already a member
   const { data: existingMember } = await supabase
@@ -137,10 +122,12 @@ export async function joinWorkspace(workspaceId: string, skillProfile?: SkillPro
     redirect("/dashboard");
   }
 
+  const assignedRole = inviteRole === "pm" ? "pm" : inviteRole === "client" ? "client" : "member";
+
   const memberData: Record<string, unknown> = {
     workspace_id: workspace.id,
     user_id: user.id,
-    role: "WORKER",
+    role: assignedRole,
   };
 
   if (skillProfile) {
@@ -149,33 +136,36 @@ export async function joinWorkspace(workspaceId: string, skillProfile?: SkillPro
     if (skillProfile.experience_level) memberData.experience_level = skillProfile.experience_level;
     if (skillProfile.years_of_experience) memberData.years_of_experience = skillProfile.years_of_experience;
     if (skillProfile.cv_url) memberData.user_cv_url = skillProfile.cv_url;
-    if (skillProfile.capacity_hours_per_week) memberData.capacity_hours_per_week = skillProfile.capacity_hours_per_week;
   }
 
-  const { error: memberError } = await supabase
+  const { error: memberError } = await adminSupabase
     .from("workspace_members")
     .insert(memberData);
 
   if (memberError) {
-    console.error("Join Error:", memberError.message);
     return { error: "Failed to join workspace" };
   }
 
-  // Also add to team_members table for SCRUM/Messaging
-  const teamMemberData = {
-    workspace_id: workspace.id,
-    user_id: user.id,
-    full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || "Member",
-    email: user.email,
-    job_title: skillProfile?.job_title || "Team Member",
-    capacity_hours_per_week: skillProfile?.capacity_hours_per_week || 40,
-    status: "online",
-    skills: skillProfile?.skills || []
-  };
+  // Only insert into team_members for non-client roles
+  // Clients are stakeholders and should NOT appear in the team member roster
+  if (assignedRole !== "client") {
+    const teamMemberData = {
+      workspace_id: workspace.id,
+      user_id: user.id,
+      full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || "Member",
+      job_title: skillProfile?.job_title || (assignedRole === "pm" ? "Project Manager" : "Team Member"),
+      capacity_hours_per_week: skillProfile?.capacity_hours_per_week || 40,
+      status: "online",
+      skills: skillProfile?.skills || []
+    };
 
-  await supabase
-    .from("team_members")
-    .insert(teamMemberData);
+    const { error: tmError } = await adminSupabase.from("team_members").insert(teamMemberData);
+    if (tmError) {
+      console.error("[joinWorkspace] team_members insert failed:", tmError.message);
+      // Return a visible error so the user knows to contact support
+      return { error: `Joined workspace but failed to create team profile: ${tmError.message}` };
+    }
+  }
 
   redirect("/dashboard");
 }
@@ -193,7 +183,6 @@ export async function updateSkillProfile(skillProfile: SkillProfile) {
   if (skillProfile.experience_level !== undefined) updateData.experience_level = skillProfile.experience_level;
   if (skillProfile.years_of_experience !== undefined) updateData.years_of_experience = skillProfile.years_of_experience;
   if (skillProfile.cv_url !== undefined) updateData.user_cv_url = skillProfile.cv_url;
-  if (skillProfile.capacity_hours_per_week !== undefined) updateData.capacity_hours_per_week = skillProfile.capacity_hours_per_week;
 
   const { error } = await supabase
     .from("workspace_members")
@@ -201,7 +190,6 @@ export async function updateSkillProfile(skillProfile: SkillProfile) {
     .eq("user_id", user.id);
 
   if (error) {
-    console.error("Skill Update Error:", error.message);
     return { error: "Failed to update skill profile" };
   }
 

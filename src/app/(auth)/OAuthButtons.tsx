@@ -15,7 +15,7 @@ export function OAuthButtons() {
     const { error: authError } = await supabase.auth.signInWithOAuth({
       provider,
       options: {
-        redirectTo: `${location.origin}/auth/callback?next=/onboarding`,
+        redirectTo: `${location.origin}/auth/callback?next=/dashboard`,
         queryParams: provider === "google" ? {
           access_type: "offline",
           prompt: "consent",

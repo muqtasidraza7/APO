@@ -39,6 +39,18 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        // Get workspace_id from the project to check role
+        const { data: projectFull } = await supabase.from("projects").select("workspace_id").eq("id", projectId).single();
+        if (projectFull) {
+            const [{ data: ws }, { data: callerMember }] = await Promise.all([
+                supabase.from("workspaces").select("owner_id").eq("id", projectFull.workspace_id).single(),
+                supabase.from("workspace_members").select("role").eq("user_id", user.id).eq("workspace_id", projectFull.workspace_id).maybeSingle(),
+            ]);
+            if (ws?.owner_id !== user.id && callerMember?.role !== "pm") {
+                return NextResponse.json({ error: "Only owners and PMs can update milestones" }, { status: 403 });
+            }
+        }
+
         const updateData: any = { ...updates };
 
         if (updates.status === 'completed') {
@@ -61,11 +73,12 @@ export async function POST(request: NextRequest) {
 
         if (currentProject?.ai_data?.milestones) {
             let currentMilestoneTitle = "";
-            
-            const milestones = currentProject.ai_data.milestones.map((m: any, idx: number) => {
-                const mId = m.id || `temp-${idx}`;
-                if (mId === milestoneId) {
-                    currentMilestoneTitle = m.title || m.task_name;
+
+            // milestoneId is the milestone title (AI milestones lack a stable .id)
+            const milestones = currentProject.ai_data.milestones.map((m: any) => {
+                const key = m.title || m.task_name || m.id;
+                if (key === milestoneId) {
+                    currentMilestoneTitle = key;
                     return { ...m, ...updateData };
                 }
                 return m;
