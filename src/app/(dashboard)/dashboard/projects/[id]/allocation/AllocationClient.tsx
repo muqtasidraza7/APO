@@ -733,31 +733,6 @@ export default function AllocationClient() {
                         </div>
                       </div>
 
-                      {/* Capacity bar for this milestone */}
-                      {!isEditing && group.members.length > 0 && (
-                        <div className="px-5 pb-4 pt-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] text-slate-400 w-20 flex-shrink-0">Team load</span>
-                            <div className="flex gap-1 flex-1">
-                              {group.members.map(({ id, member }) => {
-                                const totalLoad = memberLoad[id] || 1;
-                                const capHrs = member?.capacity_hours_per_week || 40;
-                                const usedHrs = totalLoad * 20;
-                                const pct = Math.min(100, Math.round((usedHrs / capHrs) * 100));
-                                const color = pct > 90 ? "bg-red-400" : pct > 70 ? "bg-amber-400" : "bg-indigo-400";
-                                return (
-                                  <div key={id} className="flex-1 min-w-0" title={`${member?.full_name || id}: ${pct}% utilization`}>
-                                    <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                      <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
-                                    </div>
-                                    <div className="text-[9px] text-slate-400 mt-0.5 text-center">{pct}%</div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   );
                 })}
